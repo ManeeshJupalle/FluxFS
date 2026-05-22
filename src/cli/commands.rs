@@ -38,7 +38,11 @@ pub enum Commands {
         confirm: bool,
     },
     /// Run organization rules once (no daemon)
-    Organize,
+    Organize {
+        /// Preview moves without modifying files
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Print current config location and contents
     Config,
 }
@@ -53,7 +57,7 @@ pub fn command_name(command: &Commands) -> &'static str {
         Commands::Status => "status",
         Commands::Log => "log",
         Commands::Dedup { .. } => "dedup",
-        Commands::Organize => "organize",
+        Commands::Organize { .. } => "organize",
         Commands::Config => "config",
     }
 }

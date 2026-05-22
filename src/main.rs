@@ -17,13 +17,14 @@ use cli::commands::{Cli, Commands};
 use colored::Colorize;
 use config::{
     config_file_path, ensure_data_dir, load_config, load_config_from_path, save_default_config,
-    FluxConfig,
+    watch_rulesets_from_config, FluxConfig,
 };
 use dedup::{build_report, resolve_duplicates, DuplicateReport};
 use errors::FluxError;
 use hasher::hash_all;
 use index::{index_file_path, load, save, FileIndex};
 use reporting::activity::activity_log_path;
+use rules::{organize_index, OrganizeSummary};
 use scanner::scan_directories;
 use std::process;
 use tracing::{debug, info};
@@ -43,12 +44,12 @@ fn run() -> anyhow::Result<()> {
         Commands::Init => run_init()?,
         Commands::Config => run_config()?,
         Commands::Dedup { dry_run, confirm } => run_dedup(*dry_run, *confirm)?,
+        Commands::Organize { dry_run } => run_organize(*dry_run)?,
         Commands::Start
         | Commands::Stop
         | Commands::Find { .. }
         | Commands::Status
-        | Commands::Log
-        | Commands::Organize => {
+        | Commands::Log => {
             let cfg = load_config()?;
             init_logging(&cfg)?;
             log_startup(&cfg)?;
@@ -231,6 +232,39 @@ fn run_dedup(cli_dry_run: bool, confirm_delete: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `flux organize` — match files to rules and move/copy (first match wins).
+fn run_organize(cli_dry_run: bool) -> anyhow::Result<()> {
+    let cfg = load_config()?;
+    init_logging(&cfg)?;
+    log_startup(&cfg)?;
+
+    let data_dir = ensure_data_dir(&cfg)?;
+    let index_path = index_file_path(&cfg)?;
+    let mut index = load(&index_path)?;
+
+    if index.is_empty() {
+        return Err(FluxError::Index(
+            "Index is empty. Run `flux init` first to scan and build the index.".to_string(),
+        )
+        .into());
+    }
+
+    let watch_rulesets = watch_rulesets_from_config(&cfg)?;
+    let dry_run = cfg.general.dry_run || cli_dry_run;
+    let activity_log = activity_log_path(&data_dir);
+
+    let summary = organize_index(&mut index, &watch_rulesets, dry_run, &activity_log)?;
+
+    print_organize_summary(&summary, dry_run);
+
+    if !dry_run && summary.organized > 0 {
+        save(&index, &index_path)?;
+        info!(path = %index_path.display(), "Index saved after organize");
+    }
+
+    Ok(())
+}
+
 /// `flux config` — load and pretty-print the current configuration.
 fn run_config() -> anyhow::Result<()> {
     let config_path = config_file_path()?;
@@ -247,6 +281,31 @@ fn run_config() -> anyhow::Result<()> {
     print!("{toml}");
 
     Ok(())
+}
+
+fn print_organize_summary(summary: &OrganizeSummary, dry_run: bool) {
+    println!();
+    println!("  Organize summary");
+    println!("  ────────────────────────────────────");
+    if dry_run {
+        println!("  Mode:        dry-run");
+        println!("  Would move:  {}", summary.dry_run);
+    } else {
+        println!("  Organized:   {}", summary.organized);
+    }
+    println!("  Skipped:     {}", summary.skipped);
+
+    if summary.by_rule.is_empty() {
+        return;
+    }
+
+    println!();
+    println!("  By rule:");
+    let mut entries: Vec<_> = summary.by_rule.iter().collect();
+    entries.sort_by(|a, b| b.1.cmp(a.1));
+    for (rule, count) in entries {
+        println!("    {rule}: {count}");
+    }
 }
 
 fn print_duplicate_report(report: &DuplicateReport, title: &str) {

@@ -104,6 +104,13 @@ fn validate_config(config: &FluxConfig) -> Result<()> {
         ));
     }
 
+    for watch in &config.watch {
+        for rule in &watch.rules {
+            crate::config::rules::parse_rule_pattern(&rule.pattern)?;
+            crate::config::types::expand_tilde(&rule.destination)?;
+        }
+    }
+
     Ok(())
 }
 
@@ -181,6 +188,37 @@ max_results = 20
         save_config_to_path(&path, &original).expect("save");
         let loaded = load_config_from_path(&path).expect("load");
         assert_eq!(loaded, original);
+    }
+
+    #[test]
+    fn invalid_rule_pattern_returns_error() {
+        let toml = r#"
+[general]
+data_dir = "~/.local/share/fluxfs"
+log_level = "info"
+dry_run = false
+
+[[watch]]
+path = "~/Downloads"
+
+[[watch.rules]]
+pattern = "older:90x"
+destination = "~/Archive"
+
+[duplicates]
+strategy = "trash"
+min_size = "1KB"
+exclude_paths = []
+
+[index]
+exclude_patterns = []
+max_depth = 20
+
+[search]
+max_results = 20
+"#;
+        let err = parse_config_str(toml).unwrap_err();
+        assert!(err.to_string().contains("older"));
     }
 
     #[test]

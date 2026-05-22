@@ -6,7 +6,7 @@ Intelligent filesystem autopilot — watch, organize, deduplicate, and search yo
 
 ## Status
 
-Phase 3 complete: SHA-256 hashing, duplicate detection, `flux dedup` (report/trash/delete), activity logging.
+Phase 4 complete: rule engine, pattern matching (extension/contains/older), `flux organize` with dry-run.
 
 ## Quick start
 

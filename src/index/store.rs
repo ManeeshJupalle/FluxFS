@@ -84,6 +84,15 @@ impl FileIndex {
         &self.stats
     }
 
+    /// Indexed file paths under a directory prefix.
+    pub fn file_paths_under(&self, root: &Path) -> Vec<PathBuf> {
+        self.entries
+            .keys()
+            .filter(|path| path.starts_with(root))
+            .cloned()
+            .collect()
+    }
+
     /// Number of indexed files.
     pub fn len(&self) -> usize {
         self.entries.len()

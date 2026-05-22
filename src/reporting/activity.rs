@@ -27,6 +27,11 @@ pub enum ActivityAction {
         path: PathBuf,
         size: u64,
     },
+    FileMoved {
+        from: PathBuf,
+        to: PathBuf,
+        rule: String,
+    },
 }
 
 /// Default activity log filename inside the data directory.
@@ -72,6 +77,21 @@ pub fn log_duplicate_found(
                 original: original.to_path_buf(),
                 duplicate: duplicate.to_path_buf(),
                 size,
+            },
+        },
+    )
+}
+
+/// Log that a file was moved or copied by a rule.
+pub fn log_file_moved(log_path: &Path, from: &Path, to: &Path, rule: &str) -> Result<()> {
+    append(
+        log_path,
+        ActivityEntry {
+            timestamp: Utc::now(),
+            action: ActivityAction::FileMoved {
+                from: from.to_path_buf(),
+                to: to.to_path_buf(),
+                rule: rule.to_string(),
             },
         },
     )
