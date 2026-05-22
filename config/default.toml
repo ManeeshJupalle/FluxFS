@@ -25,11 +25,13 @@ destination = "~/Archives/"
 [duplicates]
 strategy = "trash"
 min_size = "1KB"
+max_hash_size = "1GB"
 exclude_paths = [".git", "node_modules", ".venv"]
 
 [index]
 exclude_patterns = [".git", "node_modules", ".venv", "__pycache__", ".DS_Store"]
 max_depth = 20
+follow_symlinks = false
 
 [search]
 max_results = 20

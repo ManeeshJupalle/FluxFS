@@ -354,7 +354,9 @@ fn format_entry_line(entry: &ActivityEntry, home: Option<&Path>) -> String {
                 format_bytes(*size).green()
             )
         }
-        ActivityAction::DuplicateFound { duplicate, size, .. } => {
+        ActivityAction::DuplicateFound {
+            duplicate, size, ..
+        } => {
             let name = duplicate
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
@@ -380,9 +382,7 @@ fn format_entry_line(entry: &ActivityEntry, home: Option<&Path>) -> String {
             duration_ms,
         } => {
             let secs = *duration_ms as f64 / 1000.0;
-            format!(
-                "🔍 Full scan completed: {file_count} files indexed in {secs:.1}s"
-            )
+            format!("🔍 Full scan completed: {file_count} files indexed in {secs:.1}s")
         }
     };
 

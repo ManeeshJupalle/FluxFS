@@ -16,6 +16,10 @@ const EMBEDDED_DEFAULT: &str = include_str!("../../config/default.toml");
 
 /// Returns the platform config file path (`~/.config/fluxfs/config.toml` on Unix).
 pub fn config_file_path() -> Result<PathBuf> {
+    if let Ok(path) = std::env::var("FLUXFS_CONFIG") {
+        return Ok(PathBuf::from(path));
+    }
+
     let config_dir = dirs::config_dir().ok_or_else(|| {
         FluxError::Config(
             "Could not determine config directory. Set XDG_CONFIG_HOME or use a supported platform."
@@ -25,14 +29,20 @@ pub fn config_file_path() -> Result<PathBuf> {
     Ok(config_dir.join(CONFIG_DIR_NAME).join(CONFIG_FILENAME))
 }
 
-/// Load config from disk, or return defaults if the file is missing.
+/// Load config from disk; create default config with a warning if missing.
 pub fn load_config() -> Result<FluxConfig> {
     let path = config_file_path()?;
     if path.exists() {
-        load_config_from_path(&path)
-    } else {
-        Ok(FluxConfig::default())
+        return load_config_from_path(&path);
     }
+
+    tracing::warn!(
+        path = %path.display(),
+        "Config file not found — creating default config"
+    );
+    let config = FluxConfig::default();
+    save_config_to_path(&path, &config)?;
+    Ok(config)
 }
 
 /// Load config from a specific path.
@@ -105,11 +115,15 @@ fn validate_config(config: &FluxConfig) -> Result<()> {
     }
 
     for watch in &config.watch {
+        crate::config::types::expand_tilde(&watch.path)?;
         for rule in &watch.rules {
             crate::config::rules::parse_rule_pattern(&rule.pattern)?;
             crate::config::types::expand_tilde(&rule.destination)?;
         }
     }
+
+    crate::config::size::parse_size(&config.duplicates.min_size)?;
+    crate::config::size::parse_size(&config.duplicates.max_hash_size)?;
 
     Ok(())
 }
@@ -149,11 +163,13 @@ path = "~/Downloads"
 [duplicates]
 strategy = "trash"
 min_size = "1KB"
+max_hash_size = "1GB"
 exclude_paths = []
 
 [index]
 exclude_patterns = []
 max_depth = 20
+follow_symlinks = false
 
 [search]
 max_results = 20
@@ -171,13 +187,19 @@ max_results = 20
     }
 
     #[test]
-    fn load_from_missing_file_uses_defaults() {
+    fn load_config_creates_missing_file() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("missing.toml");
-        // load_config_from_path on missing would fail; test default path behavior via parse
+        let path = dir.path().join(CONFIG_FILENAME);
         assert!(!path.exists());
-        let cfg = FluxConfig::default();
+
+        std::env::set_var("FLUXFS_CONFIG", &path);
+        let cfg = load_config().expect("load");
+        std::env::remove_var("FLUXFS_CONFIG");
+
+        assert!(path.exists());
         assert_eq!(cfg.duplicates.strategy, "trash");
+        assert_eq!(cfg.duplicates.max_hash_size, "1GB");
+        assert!(!cfg.index.follow_symlinks);
     }
 
     #[test]
@@ -208,11 +230,13 @@ destination = "~/Archive"
 [duplicates]
 strategy = "trash"
 min_size = "1KB"
+max_hash_size = "1GB"
 exclude_paths = []
 
 [index]
 exclude_patterns = []
 max_depth = 20
+follow_symlinks = false
 
 [search]
 max_results = 20

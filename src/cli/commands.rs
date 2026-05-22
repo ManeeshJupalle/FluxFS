@@ -92,4 +92,3 @@ pub enum Commands {
     /// Print current config location and contents
     Config,
 }
-

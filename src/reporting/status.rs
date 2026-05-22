@@ -10,7 +10,7 @@ use crate::reporting::format::{
     format_bytes, format_last_scan, format_uptime, home_dir, shorten_path,
 };
 use crate::watcher::daemon::{
-    daemon_started_path, is_daemon_running, read_daemon_started, read_pid_file, pid_file_path,
+    daemon_started_path, is_daemon_running, pid_file_path, read_daemon_started, read_pid_file,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use colored::Colorize;
@@ -33,7 +33,10 @@ pub fn print_status(
 
     println!();
     println!("  {}", "⚡ FluxFS Status".bold().cyan());
-    println!("  {}", "────────────────────────────────────".bright_black());
+    println!(
+        "  {}",
+        "────────────────────────────────────".bright_black()
+    );
 
     print_daemon_section(data_dir)?;
     print_index_section(stats, config.watch.len());
@@ -58,10 +61,7 @@ fn print_daemon_section(data_dir: &Path) -> Result<()> {
             format_uptime(uptime)
         );
     } else {
-        println!(
-            "  Daemon:      {}",
-            "○ Stopped".yellow()
-        );
+        println!("  Daemon:      {}", "○ Stopped".yellow());
     }
 
     Ok(())
@@ -218,11 +218,7 @@ fn is_directory_empty(path: &Path) -> Result<bool> {
     Ok(entries.next().is_none())
 }
 
-fn count_old_download_files(
-    index: &FileIndex,
-    watch_paths: &[PathBuf],
-    days: i64,
-) -> usize {
+fn count_old_download_files(index: &FileIndex, watch_paths: &[PathBuf], days: i64) -> usize {
     let downloads_root = watch_paths.iter().find(|p| {
         p.file_name()
             .map(|n| n.to_string_lossy().eq_ignore_ascii_case("downloads"))

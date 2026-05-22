@@ -69,9 +69,9 @@ impl FluxWatcher {
                 );
                 continue;
             }
-            watcher
-                .watch(path, RecursiveMode::Recursive)
-                .map_err(|e| FluxError::Watcher(format!("Cannot watch {}: {e}", path.display())))?;
+            watcher.watch(path, RecursiveMode::Recursive).map_err(|e| {
+                FluxError::Watcher(format!("Cannot watch {} — {e}", path.display()))
+            })?;
             debug!(path = %path.display(), "Watching directory");
         }
 
@@ -256,7 +256,7 @@ mod tests {
         .with_debounce_ms(50);
 
         let (tx, rx) = mpsc::channel();
-        let watcher = FluxWatcher::build_watcher(tx, &[watch.clone()]).expect("watcher");
+        let watcher = FluxWatcher::build_watcher(tx, std::slice::from_ref(&watch)).expect("watcher");
 
         thread::sleep(Duration::from_millis(100));
         std::fs::write(watch.join("new_file.txt"), b"hello").expect("write");
@@ -293,7 +293,7 @@ mod tests {
         .with_debounce_ms(50);
 
         let (tx, rx) = mpsc::channel();
-        let watcher = FluxWatcher::build_watcher(tx, &[watch.clone()]).expect("watcher");
+        let watcher = FluxWatcher::build_watcher(tx, std::slice::from_ref(&watch)).expect("watcher");
 
         thread::sleep(Duration::from_millis(100));
         let source = watch.join("doc.pdf");

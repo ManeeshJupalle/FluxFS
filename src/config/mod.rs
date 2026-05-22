@@ -2,6 +2,7 @@
 
 pub mod parser;
 pub mod rules;
+pub mod size;
 pub mod types;
 
 pub use parser::{

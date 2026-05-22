@@ -55,4 +55,3 @@ fn color_path(path: &Path) -> String {
 fn format_modified(time: DateTime<Utc>) -> String {
     time.format("%b %d").to_string()
 }
-

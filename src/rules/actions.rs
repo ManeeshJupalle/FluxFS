@@ -5,6 +5,7 @@ use crate::reporting::activity::log_file_moved;
 use crate::rules::engine::{Rule, RuleAction};
 use crate::scanner::metadata::FileEntry;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 /// Outcome of organizing a single file.
@@ -50,16 +51,7 @@ pub fn organize_file(
 
     match rule.action {
         RuleAction::Move => {
-            fs::rename(&entry.path, &dest_path).map_err(|e| {
-                FluxError::Io(std::io::Error::new(
-                    e.kind(),
-                    format!(
-                        "Failed to move {} to {}: {e}",
-                        entry.path.display(),
-                        dest_path.display()
-                    ),
-                ))
-            })?;
+            fs::rename(&entry.path, &dest_path).map_err(map_filesystem_error)?;
             log_file_moved(activity_log, &entry.path, &dest_path, &rule.label)?;
             Ok(OrganizeResult::Moved {
                 from: entry.path.clone(),
@@ -67,16 +59,7 @@ pub fn organize_file(
             })
         }
         RuleAction::Copy => {
-            fs::copy(&entry.path, &dest_path).map_err(|e| {
-                FluxError::Io(std::io::Error::new(
-                    e.kind(),
-                    format!(
-                        "Failed to copy {} to {}: {e}",
-                        entry.path.display(),
-                        dest_path.display()
-                    ),
-                ))
-            })?;
+            fs::copy(&entry.path, &dest_path).map_err(map_filesystem_error)?;
             log_file_moved(activity_log, &entry.path, &dest_path, &rule.label)?;
             Ok(OrganizeResult::Copied {
                 from: entry.path.clone(),
@@ -112,6 +95,13 @@ fn resolve_destination(dest_dir: &Path, filename: &str) -> Result<PathBuf> {
         }
         counter += 1;
     }
+}
+
+fn map_filesystem_error(err: io::Error) -> FluxError {
+    if err.kind() == io::ErrorKind::StorageFull {
+        return FluxError::Rule(format!("Filesystem is full: {err}"));
+    }
+    FluxError::Io(err)
 }
 
 fn paths_equivalent(left: &Path, right: &Path) -> bool {
@@ -187,6 +177,16 @@ mod tests {
         };
         assert_eq!(dest.file_name().unwrap().to_string_lossy(), "report_1.txt");
         assert!(dest.exists());
+    }
+
+    #[test]
+    fn map_filesystem_error_detects_storage_full() {
+        let err = map_filesystem_error(io::Error::new(
+            io::ErrorKind::StorageFull,
+            "no space left on device",
+        ));
+        assert!(matches!(err, FluxError::Rule(_)));
+        assert!(err.to_string().contains("full"));
     }
 
     #[test]

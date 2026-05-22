@@ -19,13 +19,21 @@ pub struct ScanSummary {
 
 /// Scan a single directory tree and return file entries (directories are walked but not indexed).
 pub fn scan_directory(root: &Path, index_cfg: &IndexConfig) -> Result<Vec<FileEntry>> {
-    let started = Instant::now();
     let paths = collect_file_paths(root, index_cfg)?;
     let entries: Vec<FileEntry> = paths
         .par_iter()
-        .filter_map(|path| FileEntry::from_path(path).ok())
+        .filter_map(|path| match FileEntry::from_path(path) {
+            Ok(entry) => Some(entry),
+            Err(err) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %err,
+                    "Skipping file (permission denied or unreadable)"
+                );
+                None
+            }
+        })
         .collect();
-    let _elapsed = started.elapsed();
     Ok(entries)
 }
 
@@ -77,13 +85,22 @@ pub fn scan_directories(
 fn collect_file_paths(root: &Path, index_cfg: &IndexConfig) -> Result<Vec<PathBuf>> {
     let max_depth = index_cfg.max_depth;
     let exclude = &index_cfg.exclude_patterns;
+    let follow_symlinks = index_cfg.follow_symlinks;
 
     let paths: Vec<PathBuf> = WalkDir::new(root)
         .max_depth(max_depth as usize)
+        .follow_links(follow_symlinks)
         .into_iter()
         .filter_entry(|entry| !should_skip_entry(entry.path(), entry.file_type().is_dir(), exclude))
-        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| match entry {
+            Ok(entry) => Some(entry),
+            Err(err) => {
+                tracing::warn!(error = %err, "Permission denied during scan, skipping entry");
+                None
+            }
+        })
         .filter(|entry| entry.file_type().is_file())
+        .filter(|entry| follow_symlinks || !entry.file_type().is_symlink())
         .filter(|entry| {
             let name = entry.file_name().to_string_lossy();
             !matches_exclude_name(&name, exclude)
@@ -115,7 +132,7 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
 
-    fn index_cfg(max_depth: u32) -> IndexConfig {
+    fn index_cfg(max_depth: u32, follow_symlinks: bool) -> IndexConfig {
         IndexConfig {
             exclude_patterns: vec![
                 ".git".to_string(),
@@ -123,13 +140,14 @@ mod tests {
                 ".venv".to_string(),
             ],
             max_depth,
+            follow_symlinks,
         }
     }
 
     #[test]
     fn scan_empty_directory_returns_no_entries() {
         let dir = tempdir().expect("tempdir");
-        let entries = scan_directory(dir.path(), &index_cfg(20)).expect("scan");
+        let entries = scan_directory(dir.path(), &index_cfg(20, false)).expect("scan");
         assert!(entries.is_empty());
     }
 
@@ -139,7 +157,7 @@ mod tests {
         fs::write(dir.path().join("a.txt"), b"aaa").expect("write");
         fs::write(dir.path().join("b.pdf"), b"bbb").expect("write");
 
-        let entries = scan_directory(dir.path(), &index_cfg(20)).expect("scan");
+        let entries = scan_directory(dir.path(), &index_cfg(20, false)).expect("scan");
         assert_eq!(entries.len(), 2);
         assert!(entries.iter().all(|e| !e.is_dir));
     }
@@ -151,7 +169,7 @@ mod tests {
         fs::write(dir.path().join("node_modules/hidden.js"), b"x").expect("write");
         fs::write(dir.path().join("visible.txt"), b"y").expect("write");
 
-        let entries = scan_directory(dir.path(), &index_cfg(20)).expect("scan");
+        let entries = scan_directory(dir.path(), &index_cfg(20, false)).expect("scan");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].filename, "visible.txt");
     }
@@ -165,9 +183,36 @@ mod tests {
         fs::write(dir.path().join("level1/mid.txt"), b"m").expect("write");
         fs::write(nested.join("deep.txt"), b"d").expect("write");
 
-        let entries = scan_directory(dir.path(), &index_cfg(1)).expect("scan");
+        let entries = scan_directory(dir.path(), &index_cfg(1, false)).expect("scan");
         let names: Vec<_> = entries.iter().map(|e| e.filename.as_str()).collect();
         assert!(names.contains(&"root.txt"));
-        assert!(!names.iter().any(|n| *n == "deep.txt"));
+        assert!(!names.contains(&"deep.txt"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_skips_symlinks_by_default() {
+        let dir = tempdir().expect("tempdir");
+        let target = dir.path().join("real.txt");
+        let link = dir.path().join("link.txt");
+        fs::write(&target, b"data").expect("write");
+        std::os::unix::fs::symlink(&target, &link).expect("symlink");
+
+        let entries = scan_directory(dir.path(), &index_cfg(20, false)).expect("scan");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].filename, "real.txt");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_follows_symlinks_when_enabled() {
+        let dir = tempdir().expect("tempdir");
+        let target = dir.path().join("real.txt");
+        let link = dir.path().join("link.txt");
+        fs::write(&target, b"data").expect("write");
+        std::os::unix::fs::symlink(&target, &link).expect("symlink");
+
+        let entries = scan_directory(dir.path(), &index_cfg(20, true)).expect("scan");
+        assert_eq!(entries.len(), 2);
     }
 }

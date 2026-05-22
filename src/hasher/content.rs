@@ -47,12 +47,24 @@ pub fn hash_file(path: &Path) -> Result<String> {
 /// Hash all unhashed entries in the index in parallel.
 pub fn hash_all(index: &mut FileIndex, duplicates: &DuplicatesConfig) -> Result<HashStats> {
     let min_size = parse_min_size(&duplicates.min_size)?;
+    let max_size = parse_min_size(&duplicates.max_hash_size)?;
     let exclude_paths = &duplicates.exclude_paths;
 
     let unhashed = index.entries_needing_hash();
     let candidates: Vec<(PathBuf, FileEntry)> = unhashed
         .iter()
-        .filter(|(_, entry)| !should_skip_entry(entry, min_size, exclude_paths))
+        .filter(|(_, entry)| {
+            let skip = should_skip_entry(entry, min_size, max_size, exclude_paths);
+            if skip && entry.size_bytes > max_size {
+                tracing::warn!(
+                    path = %entry.path.display(),
+                    size = entry.size_bytes,
+                    max = max_size,
+                    "Skipping hash for large file"
+                );
+            }
+            !skip
+        })
         .cloned()
         .collect();
 
@@ -107,8 +119,13 @@ pub fn hash_all(index: &mut FileIndex, duplicates: &DuplicatesConfig) -> Result<
     })
 }
 
-fn should_skip_entry(entry: &FileEntry, min_size: u64, exclude_paths: &[String]) -> bool {
-    if entry.size_bytes < min_size {
+fn should_skip_entry(
+    entry: &FileEntry,
+    min_size: u64,
+    max_size: u64,
+    exclude_paths: &[String],
+) -> bool {
+    if entry.size_bytes < min_size || entry.size_bytes > max_size {
         return true;
     }
     path_matches_exclude(&entry.path, exclude_paths)
@@ -125,46 +142,7 @@ fn path_matches_exclude(path: &Path, exclude_paths: &[String]) -> bool {
 
 /// Parse human-readable size strings such as `1KB`, `10MB`, `2GB`.
 pub fn parse_min_size(value: &str) -> Result<u64> {
-    let value = value.trim();
-    if value.is_empty() {
-        return Err(FluxError::Config(
-            "duplicates.min_size cannot be empty.".to_string(),
-        ));
-    }
-
-    let (number, unit) = if let Some(stripped) = value.strip_suffix("GB") {
-        (stripped, "GB")
-    } else if let Some(stripped) = value.strip_suffix("MB") {
-        (stripped, "MB")
-    } else if let Some(stripped) = value.strip_suffix("KB") {
-        (stripped, "KB")
-    } else if let Some(stripped) = value.strip_suffix('B') {
-        (stripped, "B")
-    } else {
-        (value, "B")
-    };
-
-    let number: u64 = number.trim().parse().map_err(|_| {
-        FluxError::Config(format!(
-            "Invalid duplicates.min_size '{value}'. Use formats like 1KB, 10MB, 2GB."
-        ))
-    })?;
-
-    let multiplier = match unit {
-        "GB" => 1024 * 1024 * 1024,
-        "MB" => 1024 * 1024,
-        "KB" => 1024,
-        "B" => 1,
-        _ => {
-            return Err(FluxError::Config(format!(
-                "Unknown size unit in duplicates.min_size '{value}'."
-            )));
-        }
-    };
-
-    number
-        .checked_mul(multiplier)
-        .ok_or_else(|| FluxError::Config(format!("duplicates.min_size '{value}' is too large.")))
+    crate::config::size::parse_size(value)
 }
 
 #[cfg(test)]
@@ -242,6 +220,7 @@ mod tests {
         let cfg = DuplicatesConfig {
             strategy: "report".to_string(),
             min_size: "1B".to_string(),
+            max_hash_size: "1GB".to_string(),
             exclude_paths: vec![],
         };
 
@@ -251,6 +230,31 @@ mod tests {
         let hash_a = index.get(&path_a).unwrap().content_hash.clone().unwrap();
         let hash_b = index.get(&path_b).unwrap().content_hash.clone().unwrap();
         assert_eq!(hash_a, hash_b);
+    }
+
+    #[test]
+    fn hash_all_skips_files_above_max_hash_size() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("huge.bin");
+        std::fs::write(&path, vec![0u8; 64]).expect("write");
+
+        let mut index = FileIndex::new();
+        index.insert(FileEntry {
+            size_bytes: 2 * 1024 * 1024,
+            ..entry_at(path.clone(), 2 * 1024 * 1024)
+        });
+
+        let cfg = DuplicatesConfig {
+            strategy: "report".to_string(),
+            min_size: "1B".to_string(),
+            max_hash_size: "1KB".to_string(),
+            exclude_paths: vec![],
+        };
+
+        let stats = hash_all(&mut index, &cfg).expect("hash all");
+        assert_eq!(stats.hashed, 0);
+        assert_eq!(stats.skipped, 1);
+        assert!(index.get(&path).unwrap().content_hash.is_none());
     }
 
     #[test]
@@ -265,6 +269,7 @@ mod tests {
         let cfg = DuplicatesConfig {
             strategy: "report".to_string(),
             min_size: "1KB".to_string(),
+            max_hash_size: "1GB".to_string(),
             exclude_paths: vec![],
         };
 

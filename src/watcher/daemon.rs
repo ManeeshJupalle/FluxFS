@@ -269,15 +269,19 @@ pub async fn run_daemon(config: FluxConfig) -> Result<()> {
 
 async fn shutdown_signal() {
     let ctrl_c = async {
-        signal::ctrl_c().await.expect("Failed to listen for Ctrl+C");
+        if let Err(err) = signal::ctrl_c().await {
+            warn!(error = %err, "Failed to listen for Ctrl+C");
+        }
     };
 
     #[cfg(unix)]
     let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("Failed to listen for SIGTERM")
-            .recv()
-            .await;
+        match signal::unix::signal(signal::unix::SignalKind::terminate()) {
+            Ok(mut stream) => {
+                stream.recv().await;
+            }
+            Err(err) => warn!(error = %err, "Failed to listen for SIGTERM"),
+        }
     };
 
     #[cfg(not(unix))]

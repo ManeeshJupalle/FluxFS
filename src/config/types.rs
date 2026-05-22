@@ -41,7 +41,14 @@ pub struct WatchRule {
 pub struct DuplicatesConfig {
     pub strategy: String,
     pub min_size: String,
+    /// Skip hashing files larger than this (default 1GB).
+    #[serde(default = "default_max_hash_size")]
+    pub max_hash_size: String,
     pub exclude_paths: Vec<String>,
+}
+
+fn default_max_hash_size() -> String {
+    "1GB".to_string()
 }
 
 /// Indexing and scan settings.
@@ -49,6 +56,9 @@ pub struct DuplicatesConfig {
 pub struct IndexConfig {
     pub exclude_patterns: Vec<String>,
     pub max_depth: u32,
+    /// Follow symbolic links during scans (default: skip).
+    #[serde(default)]
+    pub follow_symlinks: bool,
 }
 
 /// Search command settings.

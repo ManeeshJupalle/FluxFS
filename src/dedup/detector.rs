@@ -285,6 +285,7 @@ mod tests {
         let cfg = DuplicatesConfig {
             strategy: "trash".to_string(),
             min_size: "1B".to_string(),
+            max_hash_size: "1GB".to_string(),
             exclude_paths: vec![],
         };
 
@@ -316,6 +317,7 @@ mod tests {
         let cfg = DuplicatesConfig {
             strategy: "trash".to_string(),
             min_size: "1B".to_string(),
+            max_hash_size: "1GB".to_string(),
             exclude_paths: vec![],
         };
 

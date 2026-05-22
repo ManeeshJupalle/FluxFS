@@ -40,6 +40,9 @@ use watcher::{is_daemon_running, run_daemon, stop_daemon};
 fn main() {
     if let Err(err) = run() {
         eprintln!("Error: {err:#}");
+        if let Some(hint) = errors::hint_for_anyhow(&err) {
+            eprintln!("Hint: {hint}");
+        }
         process::exit(1);
     }
 }
