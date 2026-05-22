@@ -114,6 +114,56 @@ pub fn organize_index(
     Ok(summary)
 }
 
+/// Find the watch ruleset that contains a file path.
+pub fn ruleset_for_path<'a>(rulesets: &'a [WatchRuleset], path: &Path) -> Option<&'a WatchRuleset> {
+    rulesets
+        .iter()
+        .find(|ruleset| path.starts_with(&ruleset.watch_path))
+}
+
+/// Handle a new or updated file: match rules, organize, update the index.
+pub fn process_new_file(
+    index: &mut FileIndex,
+    path: &Path,
+    rulesets: &[WatchRuleset],
+    dry_run: bool,
+    activity_log: &Path,
+) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let entry = FileEntry::from_path(path)?;
+    if entry.is_dir {
+        return Ok(());
+    }
+
+    if let Some(ruleset) = ruleset_for_path(rulesets, path) {
+        if let Some(rule) = find_matching_rule(&ruleset.rules, &entry) {
+            match organize_file(&entry, rule, dry_run, activity_log)? {
+                OrganizeResult::Moved { from, to } | OrganizeResult::Copied { from, to } => {
+                    if !dry_run {
+                        let mut updated = FileEntry::from_path(&to)?;
+                        updated.content_hash = entry.content_hash;
+                        index.remove(&from);
+                        index.insert(updated);
+                    }
+                    return Ok(());
+                }
+                OrganizeResult::DryRun { .. } | OrganizeResult::Skipped { .. } => {
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    if !dry_run {
+        index.insert(entry);
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

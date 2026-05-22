@@ -16,7 +16,11 @@ pub enum Commands {
     /// First-time setup: create config and data directories
     Init,
     /// Start the background file watcher daemon
-    Start,
+    Start {
+        /// Run the watcher in the foreground (required in v0.1)
+        #[arg(long)]
+        foreground: bool,
+    },
     /// Stop the running daemon
     Stop,
     /// Fuzzy search indexed files
@@ -51,7 +55,7 @@ pub enum Commands {
 pub fn command_name(command: &Commands) -> &'static str {
     match command {
         Commands::Init => "init",
-        Commands::Start => "start",
+        Commands::Start { .. } => "start",
         Commands::Stop => "stop",
         Commands::Find { .. } => "find",
         Commands::Status => "status",

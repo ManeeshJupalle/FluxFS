@@ -29,6 +29,7 @@ use scanner::scan_directories;
 use std::process;
 use tracing::{debug, info};
 use tracing_subscriber::EnvFilter;
+use watcher::{is_daemon_running, run_daemon, stop_daemon};
 
 fn main() {
     if let Err(err) = run() {
@@ -45,11 +46,9 @@ fn run() -> anyhow::Result<()> {
         Commands::Config => run_config()?,
         Commands::Dedup { dry_run, confirm } => run_dedup(*dry_run, *confirm)?,
         Commands::Organize { dry_run } => run_organize(*dry_run)?,
-        Commands::Start
-        | Commands::Stop
-        | Commands::Find { .. }
-        | Commands::Status
-        | Commands::Log => {
+        Commands::Start { foreground } => run_start(*foreground)?,
+        Commands::Stop => run_stop()?,
+        Commands::Find { .. } | Commands::Status | Commands::Log => {
             let cfg = load_config()?;
             init_logging(&cfg)?;
             log_startup(&cfg)?;
@@ -261,6 +260,54 @@ fn run_organize(cli_dry_run: bool) -> anyhow::Result<()> {
         save(&index, &index_path)?;
         info!(path = %index_path.display(), "Index saved after organize");
     }
+
+    Ok(())
+}
+
+/// `flux start` — run the file watcher daemon (foreground in v0.1).
+fn run_start(foreground: bool) -> anyhow::Result<()> {
+    if !foreground {
+        println!("FluxFS v0.1 runs the watcher in the foreground.");
+        println!();
+        println!("  Start with:  flux start --foreground");
+        println!("  Stop with:   flux stop");
+        println!();
+        println!("  Tip: run in the background with your shell, e.g.");
+        println!("    flux start --foreground   (Unix: add & at the end)");
+        return Ok(());
+    }
+
+    let cfg = load_config()?;
+    init_logging(&cfg)?;
+    log_startup(&cfg)?;
+
+    let data_dir = ensure_data_dir(&cfg)?;
+    if is_daemon_running(&data_dir)? {
+        return Err(FluxError::Watcher(
+            "FluxFS daemon is already running. Use `flux stop` first.".to_string(),
+        )
+        .into());
+    }
+
+    println!("FluxFS daemon running (foreground). Press Ctrl+C to stop.");
+    println!("  Data: {}", data_dir.display());
+
+    let runtime =
+        tokio::runtime::Runtime::new().context("Failed to start tokio runtime for daemon")?;
+    runtime.block_on(run_daemon(cfg))?;
+
+    Ok(())
+}
+
+/// `flux stop` — stop the running daemon.
+fn run_stop() -> anyhow::Result<()> {
+    let cfg = load_config()?;
+    init_logging(&cfg)?;
+
+    let data_dir = ensure_data_dir(&cfg)?;
+    stop_daemon(&data_dir)?;
+
+    println!("FluxFS daemon stopped.");
 
     Ok(())
 }

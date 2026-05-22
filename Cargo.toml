@@ -25,7 +25,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 colored = "2"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
-tokio = { version = "1", features = ["rt", "signal", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "signal", "macros", "time", "sync"] }
 
 [dev-dependencies]
 tempfile = "3"

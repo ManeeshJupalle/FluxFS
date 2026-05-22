@@ -6,7 +6,7 @@ Intelligent filesystem autopilot — watch, organize, deduplicate, and search yo
 
 ## Status
 
-Phase 4 complete: rule engine, pattern matching (extension/contains/older), `flux organize` with dry-run.
+Phase 5 complete: file watcher daemon with debouncing, `flux start --foreground`, `flux stop`.
 
 ## Quick start
 
