@@ -6,7 +6,7 @@ Intelligent filesystem autopilot — watch, organize, deduplicate, and search yo
 
 ## Status
 
-Phase 1 complete: CLI skeleton, configuration, and logging.
+Phase 2 complete: file scanner, in-memory index, bincode persistence, and `flux init` scan.
 
 ## Quick start
 

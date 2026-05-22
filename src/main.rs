@@ -19,6 +19,8 @@ use config::{
     FluxConfig,
 };
 use errors::FluxError;
+use index::{index_file_path, load, save, FileIndex};
+use scanner::scan_directories;
 use std::process;
 use tracing::{debug, info};
 use tracing_subscriber::EnvFilter;
@@ -81,7 +83,7 @@ fn log_startup(config: &FluxConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `flux init` — create config and data directories, write default config if missing.
+/// `flux init` — create config/data dirs, scan watch paths, build and save index.
 fn run_init() -> anyhow::Result<()> {
     let config_path = config_file_path()?;
 
@@ -102,9 +104,37 @@ fn run_init() -> anyhow::Result<()> {
     let data_dir = ensure_data_dir(&cfg)?;
     info!(path = %data_dir.display(), "Data directory ready");
 
+    let watch_paths = cfg.watch_paths()?;
+    info!(directories = watch_paths.len(), "Starting filesystem scan");
+
+    let (entries, summary) = scan_directories(&watch_paths, &cfg.index)?;
+    let index = FileIndex::from_entries(entries, summary.duration_ms);
+
+    let index_path = index_file_path(&cfg)?;
+    save(&index, &index_path)?;
+    let loaded = load(&index_path)?;
+    debug!(
+        path = %index_path.display(),
+        files = loaded.len(),
+        "Index verified after save"
+    );
+    info!(
+        path = %index_path.display(),
+        files = index.len(),
+        "Index saved"
+    );
+
     println!("FluxFS initialized.");
-    println!("  Config: {}", config_path.display());
-    println!("  Data:   {}", data_dir.display());
+    println!("  Config:      {}", config_path.display());
+    println!("  Data:        {}", data_dir.display());
+    println!("  Index:       {}", index_path.display());
+    println!();
+    println!("  Scan summary");
+    println!("  ────────────────────────────────────");
+    println!("  Directories: {}", summary.directories_scanned);
+    println!("  Files:       {}", summary.file_count);
+    println!("  Total size:  {}", format_bytes(summary.total_size_bytes));
+    println!("  Duration:    {:.2}s", summary.duration_ms as f64 / 1000.0);
 
     Ok(())
 }
@@ -125,4 +155,20 @@ fn run_config() -> anyhow::Result<()> {
     print!("{toml}");
 
     Ok(())
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{bytes} B")
+    }
 }

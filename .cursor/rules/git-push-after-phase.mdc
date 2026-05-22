@@ -1,0 +1,16 @@
+---
+description: Push to GitHub after completing each FluxFS build phase
+alwaysApply: true
+---
+
+# Git push after every phase
+
+When a FluxFS architecture phase (1–8) is complete and tests/clippy pass:
+
+1. Stage all relevant changes (no `target/` or secrets).
+2. Commit with a conventional message, e.g. `feat(scanner): Phase 2 file scanner and index`.
+3. Push to `origin main` on https://github.com/ManeeshJupalle/FluxFS.git
+
+Do this without waiting for the user to ask, unless they explicitly say not to push.
+
+Author: Maneesh Jupalle <maneeshreddy28@gmail.com>
