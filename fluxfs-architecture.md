@@ -148,7 +148,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Intelligent filesystem autopilot"
 license = "MIT"
-authors = ["Maneesh Jupalle"]
+authors = ["Maneesh Jupalle <maneeshreddy28@gmail.com>"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

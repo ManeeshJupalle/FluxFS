@@ -2,7 +2,7 @@
 
 Intelligent filesystem autopilot — watch, organize, deduplicate, and search your files automatically.
 
-**Author:** Maneesh Jupalle
+**Author:** Maneesh Jupalle — [maneeshreddy28@gmail.com](mailto:maneeshreddy28@gmail.com)
 
 ## Status
 
