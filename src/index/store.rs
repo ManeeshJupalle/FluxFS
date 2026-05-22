@@ -29,7 +29,6 @@ impl Default for FileIndex {
     }
 }
 
-#[allow(dead_code)] // Methods used by tests; wired into CLI in Phases 3–6.
 impl FileIndex {
     /// Create an empty index.
     pub fn new() -> Self {
@@ -96,6 +95,7 @@ impl FileIndex {
     }
 
     /// Placeholder search until Phase 6 fuzzy matching.
+    #[allow(dead_code)]
     pub fn search(&self, query: &str) -> Vec<&FileEntry> {
         let query = query.to_lowercase();
         let mut results: Vec<&FileEntry> = self
@@ -107,7 +107,45 @@ impl FileIndex {
         results
     }
 
+    /// Paths and entries that do not yet have a content hash.
+    pub fn entries_needing_hash(&self) -> Vec<(PathBuf, FileEntry)> {
+        self.entries
+            .iter()
+            .filter(|(_, entry)| !entry.is_dir && entry.content_hash.is_none())
+            .map(|(path, entry)| (path.clone(), entry.clone()))
+            .collect()
+    }
+
+    /// Apply computed hashes and rebuild duplicate lookup groups.
+    pub fn apply_content_hashes(&mut self, updates: Vec<(PathBuf, String)>) {
+        for (path, hash) in updates {
+            if let Some(entry) = self.entries.get_mut(&path) {
+                entry.content_hash = Some(hash);
+            }
+        }
+        self.rebuild_hash_groups();
+    }
+
+    /// Rebuild `hash_groups` from all indexed entries.
+    pub fn rebuild_hash_groups(&mut self) {
+        self.hash_groups.clear();
+        let entries: Vec<FileEntry> = self.entries.values().cloned().collect();
+        for entry in &entries {
+            self.add_hash_group_entry(entry);
+        }
+    }
+
+    /// Iterate hash groups with more than one path (for duplicate detection).
+    pub fn hash_groups_with_duplicates(&self) -> Vec<(String, Vec<PathBuf>)> {
+        self.hash_groups
+            .iter()
+            .filter(|(_, paths)| paths.len() > 1)
+            .map(|(hash, paths)| (hash.clone(), paths.clone()))
+            .collect()
+    }
+
     /// Groups of entries that share the same content hash (length > 1).
+    #[allow(dead_code)]
     pub fn duplicates(&self) -> Vec<Vec<&FileEntry>> {
         let mut groups = Vec::new();
         for paths in self.hash_groups.values() {

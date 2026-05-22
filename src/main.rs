@@ -14,12 +14,16 @@ mod watcher;
 use anyhow::Context;
 use clap::Parser;
 use cli::commands::{Cli, Commands};
+use colored::Colorize;
 use config::{
     config_file_path, ensure_data_dir, load_config, load_config_from_path, save_default_config,
     FluxConfig,
 };
+use dedup::{build_report, resolve_duplicates, DuplicateReport};
 use errors::FluxError;
+use hasher::hash_all;
 use index::{index_file_path, load, save, FileIndex};
+use reporting::activity::activity_log_path;
 use scanner::scan_directories;
 use std::process;
 use tracing::{debug, info};
@@ -38,12 +42,12 @@ fn run() -> anyhow::Result<()> {
     match &cli.command {
         Commands::Init => run_init()?,
         Commands::Config => run_config()?,
+        Commands::Dedup { dry_run, confirm } => run_dedup(*dry_run, *confirm)?,
         Commands::Start
         | Commands::Stop
         | Commands::Find { .. }
         | Commands::Status
         | Commands::Log
-        | Commands::Dedup
         | Commands::Organize => {
             let cfg = load_config()?;
             init_logging(&cfg)?;
@@ -83,7 +87,7 @@ fn log_startup(config: &FluxConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `flux init` — create config/data dirs, scan watch paths, build and save index.
+/// `flux init` — create config/data dirs, scan watch paths, hash, build and save index.
 fn run_init() -> anyhow::Result<()> {
     let config_path = config_file_path()?;
 
@@ -108,7 +112,18 @@ fn run_init() -> anyhow::Result<()> {
     info!(directories = watch_paths.len(), "Starting filesystem scan");
 
     let (entries, summary) = scan_directories(&watch_paths, &cfg.index)?;
-    let index = FileIndex::from_entries(entries, summary.duration_ms);
+    let mut index = FileIndex::from_entries(entries, summary.duration_ms);
+
+    let hash_stats = hash_all(&mut index, &cfg.duplicates)?;
+    info!(
+        hashed = hash_stats.hashed,
+        skipped = hash_stats.skipped,
+        failed = hash_stats.failed,
+        "Content hashing complete"
+    );
+
+    let dup_report = build_report(&index);
+    print_duplicate_report(&dup_report, "Duplicates after init");
 
     let index_path = index_file_path(&cfg)?;
     save(&index, &index_path)?;
@@ -121,6 +136,7 @@ fn run_init() -> anyhow::Result<()> {
     info!(
         path = %index_path.display(),
         files = index.len(),
+        total_size = index.stats().total_size,
         "Index saved"
     );
 
@@ -135,6 +151,82 @@ fn run_init() -> anyhow::Result<()> {
     println!("  Files:       {}", summary.file_count);
     println!("  Total size:  {}", format_bytes(summary.total_size_bytes));
     println!("  Duration:    {:.2}s", summary.duration_ms as f64 / 1000.0);
+    println!();
+    println!("  Hashing");
+    println!("  ────────────────────────────────────");
+    println!("  Hashed:      {}", hash_stats.hashed);
+    println!("  Skipped:     {}", hash_stats.skipped);
+    if hash_stats.failed > 0 {
+        println!("  Failed:      {}", hash_stats.failed);
+    }
+
+    Ok(())
+}
+
+/// `flux dedup` — hash unhashed files, report duplicates, apply strategy.
+fn run_dedup(cli_dry_run: bool, confirm_delete: bool) -> anyhow::Result<()> {
+    let cfg = load_config()?;
+    init_logging(&cfg)?;
+    log_startup(&cfg)?;
+
+    let data_dir = ensure_data_dir(&cfg)?;
+    let index_path = index_file_path(&cfg)?;
+    let mut index = load(&index_path)?;
+
+    if index.is_empty() {
+        return Err(FluxError::Index(
+            "Index is empty. Run `flux init` first to scan and build the index.".to_string(),
+        )
+        .into());
+    }
+
+    let hash_stats = hash_all(&mut index, &cfg.duplicates)?;
+    info!(
+        hashed = hash_stats.hashed,
+        skipped = hash_stats.skipped,
+        "Hashing complete for dedup"
+    );
+
+    let report = build_report(&index);
+    print_duplicate_report(&report, "Duplicate scan");
+
+    let dry_run = cfg.general.dry_run || cli_dry_run;
+    let trash_dir = data_dir.join("trash");
+    let activity_log = activity_log_path(&data_dir);
+
+    let resolve_summary = resolve_duplicates(
+        &mut index,
+        &cfg.duplicates,
+        &trash_dir,
+        &activity_log,
+        dry_run,
+        confirm_delete,
+    )?;
+
+    if dry_run {
+        println!();
+        println!(
+            "{}",
+            "Dry-run mode: no files were moved or deleted.".yellow()
+        );
+    } else if cfg.duplicates.strategy == "report" {
+        println!();
+        println!(
+            "{}",
+            "Report-only strategy: no files were modified.".bright_black()
+        );
+    } else {
+        save(&index, &index_path)?;
+        println!();
+        println!("  Resolution");
+        println!("  ────────────────────────────────────");
+        println!("  Strategy:    {}", cfg.duplicates.strategy);
+        println!("  Removed:     {}", resolve_summary.files_removed);
+        println!(
+            "  Reclaimed:   {}",
+            format_bytes(resolve_summary.bytes_reclaimed)
+        );
+    }
 
     Ok(())
 }
@@ -155,6 +247,40 @@ fn run_config() -> anyhow::Result<()> {
     print!("{toml}");
 
     Ok(())
+}
+
+fn print_duplicate_report(report: &DuplicateReport, title: &str) {
+    println!();
+    println!("  {title}");
+    println!("  ────────────────────────────────────");
+    println!("  Groups:      {}", report.groups.len());
+    println!("  Duplicates:  {}", report.duplicate_file_count);
+    println!(
+        "  Reclaimable: {}",
+        format_bytes(report.reclaimable_bytes).green()
+    );
+
+    if report.groups.is_empty() {
+        return;
+    }
+
+    println!();
+    for (idx, group) in report.groups.iter().take(10).enumerate() {
+        println!(
+            "  {}. {} ({} files, {})",
+            idx + 1,
+            &group.hash[..8.min(group.hash.len())],
+            group.files.len(),
+            format_bytes(group.size)
+        );
+        for path in &group.files {
+            println!("     {}", path.display());
+        }
+    }
+
+    if report.groups.len() > 10 {
+        println!("  ... and {} more groups", report.groups.len() - 10);
+    }
 }
 
 fn format_bytes(bytes: u64) -> String {

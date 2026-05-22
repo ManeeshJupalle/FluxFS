@@ -6,7 +6,7 @@ Intelligent filesystem autopilot — watch, organize, deduplicate, and search yo
 
 ## Status
 
-Phase 2 complete: file scanner, in-memory index, bincode persistence, and `flux init` scan.
+Phase 3 complete: SHA-256 hashing, duplicate detection, `flux dedup` (report/trash/delete), activity logging.
 
 ## Quick start
 

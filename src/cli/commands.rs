@@ -29,7 +29,14 @@ pub enum Commands {
     /// Show recent activity log
     Log,
     /// Find and handle duplicate files
-    Dedup,
+    Dedup {
+        /// Preview actions without modifying files
+        #[arg(long)]
+        dry_run: bool,
+        /// Required when using the delete strategy
+        #[arg(long)]
+        confirm: bool,
+    },
     /// Run organization rules once (no daemon)
     Organize,
     /// Print current config location and contents
@@ -45,7 +52,7 @@ pub fn command_name(command: &Commands) -> &'static str {
         Commands::Find { .. } => "find",
         Commands::Status => "status",
         Commands::Log => "log",
-        Commands::Dedup => "dedup",
+        Commands::Dedup { .. } => "dedup",
         Commands::Organize => "organize",
         Commands::Config => "config",
     }
