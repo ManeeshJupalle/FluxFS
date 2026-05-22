@@ -5,7 +5,7 @@
 
 **Intelligent filesystem autopilot** — watch, organize, deduplicate, and search your files automatically.
 
-**Status:** Phase 8 complete — polish, edge cases, integration tests, CI, and documentation.
+**Status:** v0.1.1 — ready for release. Both `flux` and `fluxfs` commands are available after install.
 
 **Author:** [Maneesh Jupalle](mailto:maneeshreddy28@gmail.com)
 
@@ -54,6 +54,14 @@ $ flux status
 git clone https://github.com/ManeeshJupalle/FluxFS.git
 cd FluxFS
 cargo install --path .
+```
+
+This installs **`flux`** and **`fluxfs`** (identical CLI). Use either name:
+
+```bash
+flux --version
+fluxfs --version
+flux init
 ```
 
 Requires [Rust](https://rustup.rs/) 1.70+ and a C toolchain (MSVC on Windows, Xcode CLT on macOS).
@@ -238,7 +246,9 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --all
 ```
 
-Integration tests live in `tests/integration.rs` and run the `fluxfs` binary in isolated temp dirs via `FLUXFS_CONFIG`.
+Integration tests live in `tests/integration.rs` and run the CLI in isolated temp dirs via `FLUXFS_CONFIG`.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md) for release history and PR guidelines.
 
 ---
 

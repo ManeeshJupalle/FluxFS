@@ -4,13 +4,21 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::Duration;
 use tempfile::TempDir;
 
 fn path_str(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-fn write_test_config(config_path: &Path, watch: &Path, data: &Path, dest: &Path) -> PathBuf {
+fn write_test_config(
+    config_path: &Path,
+    watch: &Path,
+    data: &Path,
+    dest: &Path,
+    duplicate_strategy: &str,
+) -> PathBuf {
     let watch_s = path_str(watch);
     let data_s = path_str(data);
     let dest_s = path_str(dest);
@@ -29,7 +37,7 @@ pattern = "*.pdf"
 destination = "{dest_s}"
 
 [duplicates]
-strategy = "report"
+strategy = "{duplicate_strategy}"
 min_size = "1B"
 max_hash_size = "1GB"
 exclude_paths = []
@@ -49,6 +57,10 @@ max_results = 20
 }
 
 fn setup_workspace() -> (TempDir, PathBuf, PathBuf, PathBuf, PathBuf) {
+    setup_workspace_with_strategy("report")
+}
+
+fn setup_workspace_with_strategy(strategy: &str) -> (TempDir, PathBuf, PathBuf, PathBuf, PathBuf) {
     let temp = TempDir::new().expect("tempdir");
     let root = temp.path().to_path_buf();
     let watch = root.join("Downloads");
@@ -59,7 +71,7 @@ fn setup_workspace() -> (TempDir, PathBuf, PathBuf, PathBuf, PathBuf) {
     fs::create_dir_all(&watch).expect("mkdir watch");
     fs::create_dir_all(&dest).expect("mkdir dest");
 
-    write_test_config(&config, &watch, &data, &dest);
+    write_test_config(&config, &watch, &data, &dest, strategy);
     (temp, config, watch, data, dest)
 }
 
@@ -67,6 +79,16 @@ fn flux_cmd(config: &Path) -> Command {
     let mut cmd = Command::cargo_bin("flux").unwrap();
     cmd.env("FLUXFS_CONFIG", config).env_remove("RUST_LOG");
     cmd
+}
+
+#[test]
+fn fluxfs_binary_alias_is_available() {
+    Command::cargo_bin("fluxfs")
+        .unwrap()
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("flux"));
 }
 
 #[test]
@@ -81,6 +103,29 @@ fn pipeline_init_builds_index() {
         .stdout(predicate::str::contains("FluxFS initialized"));
 
     assert!(data.join("index.bin").exists());
+}
+
+#[test]
+fn pipeline_config_prints_toml() {
+    let (_temp, config, _watch, _data, _dest) = setup_workspace();
+
+    flux_cmd(&config)
+        .arg("config")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[general]"))
+        .stdout(predicate::str::contains("data_dir"));
+}
+
+#[test]
+fn pipeline_stop_when_not_running_reports_error() {
+    let (_temp, config, _watch, _data, _dest) = setup_workspace();
+
+    flux_cmd(&config)
+        .arg("stop")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not running").or(predicate::str::contains("No PID")));
 }
 
 #[test]
@@ -116,6 +161,36 @@ fn pipeline_dedup_detects_duplicate_content() {
     assert!(data.join("index.bin").exists());
 }
 
+#[test]
+fn pipeline_dedup_trash_moves_duplicate_to_trash_dir() {
+    let (_temp, config, watch, data, _dest) = setup_workspace_with_strategy("trash");
+    fs::write(watch.join("a.txt"), b"same-bytes").expect("write");
+    fs::write(watch.join("b.txt"), b"same-bytes").expect("write");
+
+    flux_cmd(&config).arg("init").assert().success();
+    flux_cmd(&config).arg("dedup").assert().success();
+
+    let trash_dir = data.join("trash");
+    assert!(trash_dir.is_dir(), "trash directory should exist");
+
+    let trash_entries: Vec<_> = fs::read_dir(&trash_dir)
+        .expect("read trash")
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(trash_entries.len(), 1, "one duplicate should be in trash");
+
+    let remaining: Vec<_> = fs::read_dir(&watch)
+        .expect("read watch")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
+        .collect();
+    assert_eq!(
+        remaining.len(),
+        1,
+        "one original should remain in watch dir"
+    );
+}
+
 /// Regression: a `flux dedup --dry-run` (or report-only strategy) that hashes
 /// previously-unhashed files must persist those hashes. Without this, the
 /// next `flux dedup` would do all of that work over again.
@@ -123,7 +198,6 @@ fn pipeline_dedup_detects_duplicate_content() {
 fn pipeline_dedup_dry_run_persists_new_hashes() {
     let (_temp, config, watch, data, _dest) = setup_workspace();
 
-    // `flux init` builds and hashes the initial scan.
     fs::write(watch.join("a.txt"), b"same-bytes").expect("write");
     flux_cmd(&config).arg("init").assert().success();
     let index_after_init = data.join("index.bin");
@@ -133,26 +207,16 @@ fn pipeline_dedup_dry_run_persists_new_hashes() {
         .modified()
         .expect("init mtime");
 
-    // Add a new file that is not in the index yet, then run dry-run dedup.
     fs::write(watch.join("b.txt"), b"another-content").expect("write b");
-
-    // We need a fresh scan to add b.txt to the index. Re-run init.
     flux_cmd(&config).arg("init").assert().success();
 
-    // Now b.txt is indexed (no hash since the scan stopped at metadata; but
-    // init also hashes, so in fact it's hashed). To test the dry-run-persists
-    // behavior more cleanly, just confirm that a subsequent dedup --dry-run
-    // does not throw away work: index file mtime should be touched at least
-    // once during the dedup invocation.
-    std::thread::sleep(std::time::Duration::from_millis(1100));
+    std::thread::sleep(Duration::from_millis(1100));
     flux_cmd(&config)
         .arg("dedup")
         .arg("--dry-run")
         .assert()
         .success();
 
-    // Index should still exist and be readable (atomic save guarantees we
-    // never observe a partial file).
     let mtime_after_dedup = fs::metadata(&index_after_init)
         .expect("post-dedup metadata")
         .modified()
@@ -172,11 +236,10 @@ fn pipeline_organize_dry_run_does_not_create_destination() {
     let root = temp.path().to_path_buf();
     let watch = root.join("Downloads");
     let data = root.join("flux-data");
-    // Destination dir is intentionally missing; dry-run must keep it that way.
     let dest = root.join("never_created");
     let config = root.join("config.toml");
     fs::create_dir_all(&watch).expect("mkdir watch");
-    write_test_config(&config, &watch, &data, &dest);
+    write_test_config(&config, &watch, &data, &dest, "report");
 
     fs::write(watch.join("report.pdf"), b"%PDF").expect("write");
 
@@ -238,4 +301,70 @@ fn pipeline_log_shows_scan_activity() {
         .assert()
         .success()
         .stdout(predicate::str::contains("scan").or(predicate::str::contains("Scan")));
+}
+
+/// Watcher E2E: daemon organizes a newly dropped PDF via rules.
+#[test]
+fn pipeline_watcher_organizes_new_file() {
+    let (_temp, config, watch, _data, dest) = setup_workspace();
+
+    flux_cmd(&config).arg("init").assert().success();
+
+    let flux_bin = assert_cmd::cargo_bin!("flux");
+    let mut daemon = std::process::Command::new(flux_bin)
+        .arg("start")
+        .arg("--foreground")
+        .env("FLUXFS_CONFIG", &config)
+        .env_remove("RUST_LOG")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn daemon");
+
+    // Allow watcher registration and PID file write.
+    std::thread::sleep(Duration::from_secs(2));
+
+    let source = watch.join("incoming.pdf");
+    fs::write(&source, b"%PDF-watcher-test").expect("write incoming pdf");
+
+    // Debounce (500ms) + organize + index update.
+    std::thread::sleep(Duration::from_secs(3));
+
+    let stop_result = flux_cmd(&config).arg("stop").assert();
+    if stop_result.get_output().status.success() {
+        let _ = daemon.wait();
+    } else {
+        let _ = daemon.kill();
+        let _ = daemon.wait();
+    }
+
+    assert!(
+        !source.exists(),
+        "watcher should move incoming.pdf out of watch dir"
+    );
+    assert!(
+        dest.join("incoming.pdf").exists(),
+        "incoming.pdf should appear in PDFs destination"
+    );
+}
+
+#[test]
+fn pipeline_corrupt_index_recovers_on_init() {
+    let (_temp, config, watch, data, _dest) = setup_workspace();
+    fs::write(watch.join("ok.pdf"), b"%PDF").expect("write");
+
+    flux_cmd(&config).arg("init").assert().success();
+
+    let index_path = data.join("index.bin");
+    fs::write(&index_path, b"not-valid-bincode").expect("corrupt index");
+
+    flux_cmd(&config)
+        .arg("init")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("FluxFS initialized"));
+
+    assert!(index_path.exists());
+    let meta = fs::metadata(&index_path).expect("index metadata");
+    assert!(meta.len() > 16, "index should be rewritten with valid data");
 }
