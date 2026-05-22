@@ -1,5 +1,6 @@
 //! In-memory index (`HashMap<PathBuf, FileEntry>`).
 
+use crate::paths::path_is_under;
 use crate::scanner::metadata::FileEntry;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -103,7 +104,7 @@ impl FileIndex {
     pub fn file_paths_under(&self, root: &Path) -> Vec<PathBuf> {
         self.entries
             .keys()
-            .filter(|path| path.starts_with(root))
+            .filter(|path| path_is_under(path, root))
             .cloned()
             .collect()
     }

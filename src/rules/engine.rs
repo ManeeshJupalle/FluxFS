@@ -2,6 +2,7 @@
 
 use crate::errors::Result;
 use crate::index::store::FileIndex;
+use crate::paths::path_is_under;
 use crate::reporting::activity::log_file_indexed;
 use crate::rules::actions::{organize_file, OrganizeResult};
 use crate::rules::matcher::find_matching_rule;
@@ -119,7 +120,7 @@ pub fn organize_index(
 pub fn ruleset_for_path<'a>(rulesets: &'a [WatchRuleset], path: &Path) -> Option<&'a WatchRuleset> {
     rulesets
         .iter()
-        .find(|ruleset| path.starts_with(&ruleset.watch_path))
+        .find(|ruleset| path_is_under(path, &ruleset.watch_path))
 }
 
 /// Handle a new or updated file: match rules, organize, update the index.

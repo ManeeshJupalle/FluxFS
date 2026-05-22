@@ -5,6 +5,7 @@ use crate::config::FluxConfig;
 use crate::dedup::build_report;
 use crate::errors::Result;
 use crate::index::store::FileIndex;
+use crate::paths::path_is_under;
 use crate::reporting::activity::{rule_hits_for_watch, weekly_summary};
 use crate::reporting::format::{
     format_bytes, format_last_scan, format_uptime, home_dir, shorten_path,
@@ -169,7 +170,7 @@ fn print_watch_directories(
         let display = shorten_path(&path, home);
         let file_count = index
             .iter_entries()
-            .filter(|e| !e.is_dir && e.path.starts_with(&path))
+            .filter(|e| !e.is_dir && path_is_under(&e.path, &path))
             .count();
 
         let hits = if watch.rules.is_empty() {
@@ -232,7 +233,7 @@ fn count_old_download_files(index: &FileIndex, watch_paths: &[PathBuf], days: i6
     let cutoff = Utc::now() - ChronoDuration::days(days);
     index
         .iter_entries()
-        .filter(|e| !e.is_dir && e.path.starts_with(root) && e.modified < cutoff)
+        .filter(|e| !e.is_dir && path_is_under(&e.path, root) && e.modified < cutoff)
         .count()
 }
 

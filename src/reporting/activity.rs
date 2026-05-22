@@ -1,6 +1,7 @@
 //! Activity log tracking (append-only JSONL).
 
 use crate::errors::{FluxError, Result};
+use crate::paths::path_is_under;
 use crate::reporting::format::{format_bytes, home_dir, shorten_path};
 use chrono::{DateTime, Local, Utc};
 use colored::Colorize;
@@ -296,7 +297,7 @@ pub fn rule_hits_for_watch(log_path: &Path, watch_root: &Path) -> Result<usize> 
         .filter(|entry| {
             matches!(
                 &entry.action,
-                ActivityAction::FileMoved { from, .. } if from.starts_with(watch_root)
+                ActivityAction::FileMoved { from, .. } if path_is_under(from, watch_root)
             )
         })
         .count();

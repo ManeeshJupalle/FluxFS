@@ -6,6 +6,7 @@ mod dedup;
 mod errors;
 mod hasher;
 mod index;
+mod paths;
 mod reporting;
 mod rules;
 mod scanner;
