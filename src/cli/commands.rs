@@ -1,6 +1,26 @@
 //! Clap command definitions for the FluxFS CLI.
 
-use clap::{Parser, Subcommand};
+use crate::index::SortMode;
+use clap::{Parser, Subcommand, ValueEnum};
+
+#[derive(Debug, Clone, Copy, ValueEnum, Default)]
+/// Sort order for search results.
+pub enum SortArg {
+    #[default]
+    Relevance,
+    Size,
+    Date,
+}
+
+impl From<SortArg> for SortMode {
+    fn from(value: SortArg) -> Self {
+        match value {
+            SortArg::Relevance => SortMode::Relevance,
+            SortArg::Size => SortMode::Size,
+            SortArg::Date => SortMode::Date,
+        }
+    }
+}
 
 /// Intelligent filesystem autopilot — watch, organize, deduplicate, and search your files.
 #[derive(Parser, Debug)]
@@ -27,6 +47,18 @@ pub enum Commands {
     Find {
         /// Search query
         query: String,
+        /// Match against the full path instead of filename only
+        #[arg(long)]
+        path: bool,
+        /// Use glob matching instead of fuzzy search (e.g. "*.pdf")
+        #[arg(long)]
+        exact: bool,
+        /// Filter results by file extension (e.g. pdf)
+        #[arg(long)]
+        ext: Option<String>,
+        /// Sort results by size, date, or relevance (default)
+        #[arg(long, value_enum, default_value_t = SortArg::Relevance)]
+        sort: SortArg,
     },
     /// Filesystem health overview
     Status,

@@ -22,7 +22,10 @@ use config::{
 use dedup::{build_report, resolve_duplicates, DuplicateReport};
 use errors::FluxError;
 use hasher::hash_all;
-use index::{index_file_path, load, save, FileIndex};
+use index::{
+    display::print_find_results, index_file_path, load, save, search, FileIndex, SearchOptions,
+    SortMode,
+};
 use reporting::activity::activity_log_path;
 use rules::{organize_index, OrganizeSummary};
 use scanner::scan_directories;
@@ -48,7 +51,14 @@ fn run() -> anyhow::Result<()> {
         Commands::Organize { dry_run } => run_organize(*dry_run)?,
         Commands::Start { foreground } => run_start(*foreground)?,
         Commands::Stop => run_stop()?,
-        Commands::Find { .. } | Commands::Status | Commands::Log => {
+        Commands::Find {
+            query,
+            path,
+            exact,
+            ext,
+            sort,
+        } => run_find(query, *path, *exact, ext.as_deref(), (*sort).into())?,
+        Commands::Status | Commands::Log => {
             let cfg = load_config()?;
             init_logging(&cfg)?;
             log_startup(&cfg)?;
@@ -260,6 +270,41 @@ fn run_organize(cli_dry_run: bool) -> anyhow::Result<()> {
         save(&index, &index_path)?;
         info!(path = %index_path.display(), "Index saved after organize");
     }
+
+    Ok(())
+}
+
+/// `flux find` — fuzzy or glob search over the index.
+fn run_find(
+    query: &str,
+    match_path: bool,
+    exact_glob: bool,
+    extension: Option<&str>,
+    sort: SortMode,
+) -> anyhow::Result<()> {
+    let cfg = load_config()?;
+    init_logging(&cfg)?;
+    log_startup(&cfg)?;
+
+    let index_path = index_file_path(&cfg)?;
+    let index = load(&index_path)?;
+
+    if index.is_empty() {
+        return Err(FluxError::Index(
+            "Index is empty. Run `flux init` first to scan and build the index.".to_string(),
+        )
+        .into());
+    }
+
+    let options = SearchOptions {
+        match_path,
+        exact_glob,
+        extension: extension.map(str::to_string),
+        sort,
+    };
+
+    let output = search(&index, query, cfg.search.max_results, &options);
+    print_find_results(&output);
 
     Ok(())
 }

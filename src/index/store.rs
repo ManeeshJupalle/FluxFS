@@ -103,17 +103,9 @@ impl FileIndex {
         self.entries.is_empty()
     }
 
-    /// Placeholder search until Phase 6 fuzzy matching.
-    #[allow(dead_code)]
-    pub fn search(&self, query: &str) -> Vec<&FileEntry> {
-        let query = query.to_lowercase();
-        let mut results: Vec<&FileEntry> = self
-            .entries
-            .values()
-            .filter(|entry| entry.filename.to_lowercase().contains(&query))
-            .collect();
-        results.sort_by(|a, b| a.filename.cmp(&b.filename));
-        results
+    /// Iterate all indexed entries.
+    pub fn iter_entries(&self) -> impl Iterator<Item = &FileEntry> {
+        self.entries.values()
     }
 
     /// Paths and entries that do not yet have a content hash.
@@ -255,22 +247,5 @@ mod tests {
         let groups = index.duplicates();
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].len(), 2);
-    }
-
-    #[test]
-    fn search_finds_filename_substring() {
-        let mut index = FileIndex::new();
-        index.insert(FileEntry {
-            filename: "report_final.pdf".to_string(),
-            ..sample_entry("/tmp/report_final.pdf", None)
-        });
-        index.insert(FileEntry {
-            filename: "notes.txt".to_string(),
-            ..sample_entry("/tmp/notes.txt", None)
-        });
-
-        let hits = index.search("report");
-        assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].filename, "report_final.pdf");
     }
 }

@@ -6,7 +6,7 @@ Intelligent filesystem autopilot — watch, organize, deduplicate, and search yo
 
 ## Status
 
-Phase 5 complete: file watcher daemon with debouncing, `flux start --foreground`, `flux stop`.
+Phase 6 complete: nucleo fuzzy search, `flux find` with --path, --exact, --ext, and --sort.
 
 ## Quick start
 
