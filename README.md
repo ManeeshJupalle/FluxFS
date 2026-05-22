@@ -1,6 +1,7 @@
 # FluxFS
 
 [![CI](https://github.com/ManeeshJupalle/FluxFS/actions/workflows/ci.yml/badge.svg)](https://github.com/ManeeshJupalle/FluxFS/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/fluxfs.svg)](https://crates.io/crates/fluxfs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Intelligent filesystem autopilot** — watch, organize, deduplicate, and search your files automatically.
@@ -50,21 +51,26 @@ $ flux status
 
 ## Installation
 
+### From crates.io (recommended)
+
+```bash
+cargo install fluxfs
+```
+
+Installs **`flux`** and **`fluxfs`** (same CLI). Requires [Rust](https://rustup.rs/) and a C toolchain (MSVC on Windows, Xcode CLT on macOS).
+
+```bash
+flux --version
+flux init
+```
+
+### From source
+
 ```bash
 git clone https://github.com/ManeeshJupalle/FluxFS.git
 cd FluxFS
 cargo install --path .
 ```
-
-This installs **`flux`** and **`fluxfs`** (identical CLI). Use either name:
-
-```bash
-flux --version
-fluxfs --version
-flux init
-```
-
-Requires [Rust](https://rustup.rs/) 1.70+ and a C toolchain (MSVC on Windows, Xcode CLT on macOS).
 
 ---
 
