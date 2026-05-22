@@ -325,6 +325,17 @@ mod tests {
         );
     }
 
+    fn wait_until(timeout: Duration, mut condition: impl FnMut() -> bool, message: &str) {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            if condition() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        panic!("{message}");
+    }
+
     #[test]
     fn watcher_organizes_matching_file() {
         let dir = tempdir().expect("tempdir");
@@ -354,14 +365,18 @@ mod tests {
         let watcher =
             FluxWatcher::build_watcher(tx, std::slice::from_ref(&watch)).expect("watcher");
 
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(200));
         let source = watch.join("doc.pdf");
         std::fs::write(&source, b"%PDF").expect("write");
 
-        flux.run_for_duration(rx, watcher, Duration::from_millis(800))
+        flux.run_for_duration(rx, watcher, Duration::from_millis(2500))
             .expect("run");
 
-        assert!(!source.exists());
-        assert!(dest.join("doc.pdf").exists());
+        let dest_file = dest.join("doc.pdf");
+        wait_until(
+            Duration::from_secs(3),
+            || !source.exists() && dest_file.exists(),
+            "watcher should move doc.pdf to destination",
+        );
     }
 }

@@ -5,7 +5,7 @@ use predicates::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 fn path_str(path: &Path) -> String {
@@ -79,6 +79,26 @@ fn flux_cmd(config: &Path) -> Command {
     let mut cmd = Command::cargo_bin("flux").unwrap();
     cmd.env("FLUXFS_CONFIG", config).env_remove("RUST_LOG");
     cmd
+}
+
+fn wait_for_file_move(source: &Path, dest: &Path, timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if !source.exists() && dest.exists() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(
+        !source.exists(),
+        "source should be moved: {}",
+        source.display()
+    );
+    assert!(
+        dest.exists(),
+        "destination should exist: {}",
+        dest.display()
+    );
 }
 
 #[test]
@@ -325,10 +345,11 @@ fn pipeline_watcher_organizes_new_file() {
     std::thread::sleep(Duration::from_secs(2));
 
     let source = watch.join("incoming.pdf");
+    let dest_file = dest.join("incoming.pdf");
     fs::write(&source, b"%PDF-watcher-test").expect("write incoming pdf");
 
-    // Debounce (500ms) + organize + index update.
-    std::thread::sleep(Duration::from_secs(3));
+    // Debounce (500ms) + organize + index update — poll until moved or timeout.
+    wait_for_file_move(&source, &dest_file, Duration::from_secs(8));
 
     let stop_result = flux_cmd(&config).arg("stop").assert();
     if stop_result.get_output().status.success() {
@@ -339,11 +360,7 @@ fn pipeline_watcher_organizes_new_file() {
     }
 
     assert!(
-        !source.exists(),
-        "watcher should move incoming.pdf out of watch dir"
-    );
-    assert!(
-        dest.join("incoming.pdf").exists(),
+        dest_file.exists(),
         "incoming.pdf should appear in PDFs destination"
     );
 }
