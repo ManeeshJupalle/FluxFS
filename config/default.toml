@@ -1,0 +1,35 @@
+[general]
+data_dir = "~/.local/share/fluxfs"
+log_level = "info"
+dry_run = false
+
+[[watch]]
+path = "~/Downloads"
+
+[[watch.rules]]
+pattern = "*.pdf"
+destination = "~/Documents/PDFs/"
+
+[[watch.rules]]
+pattern = "*.png,*.jpg,*.jpeg,*.gif,*.webp"
+destination = "~/Pictures/Organized/"
+
+[[watch.rules]]
+pattern = "*.dmg,*.exe,*.msi,*.pkg"
+destination = "~/Installers/"
+
+[[watch.rules]]
+pattern = "*.zip,*.tar.gz,*.rar,*.7z"
+destination = "~/Archives/"
+
+[duplicates]
+strategy = "trash"
+min_size = "1KB"
+exclude_paths = [".git", "node_modules", ".venv"]
+
+[index]
+exclude_patterns = [".git", "node_modules", ".venv", "__pycache__", ".DS_Store"]
+max_depth = 20
+
+[search]
+max_results = 20
