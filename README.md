@@ -6,7 +6,7 @@ Intelligent filesystem autopilot — watch, organize, deduplicate, and search yo
 
 ## Status
 
-Phase 6 complete: nucleo fuzzy search, `flux find` with --path, --exact, --ext, and --sort.
+Phase 7 complete: activity log (`flux log`), status dashboard (`flux status`), JSONL rotation, and logging across scan/organize/dedup/watcher.
 
 ## Quick start
 

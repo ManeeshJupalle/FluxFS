@@ -6,6 +6,7 @@ use crate::errors::{FluxError, Result};
 use crate::index::{index_file_path, load, save};
 use crate::reporting::activity::activity_log_path;
 use crate::watcher::handler::FluxWatcher;
+use chrono::{DateTime, Utc};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -18,12 +19,46 @@ use tracing::{info, warn};
 /// PID filename inside the data directory.
 pub const PID_FILENAME: &str = "flux.pid";
 
+/// Daemon start timestamp file (RFC3339).
+pub const DAEMON_STARTED_FILENAME: &str = "flux.started";
+
 /// Interval between automatic index saves.
 const INDEX_SAVE_INTERVAL_SECS: u64 = 300;
 
 /// Path to the daemon PID file.
 pub fn pid_file_path(data_dir: &Path) -> PathBuf {
     data_dir.join(PID_FILENAME)
+}
+
+/// Path to the daemon start-time file.
+pub fn daemon_started_path(data_dir: &Path) -> PathBuf {
+    data_dir.join(DAEMON_STARTED_FILENAME)
+}
+
+/// Record when the daemon started (for uptime in `flux status`).
+pub fn write_daemon_started(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(FluxError::from)?;
+    }
+    let stamp = Utc::now().to_rfc3339();
+    fs::write(path, stamp).map_err(FluxError::from)?;
+    Ok(())
+}
+
+/// Read daemon start time from file.
+pub fn read_daemon_started(path: &Path) -> Result<DateTime<Utc>> {
+    let contents = fs::read_to_string(path).map_err(FluxError::from)?;
+    DateTime::parse_from_rfc3339(contents.trim())
+        .map(|dt| dt.with_timezone(&Utc))
+        .map_err(|_| FluxError::Watcher(format!("Invalid timestamp in {}", path.display())))
+}
+
+/// Remove daemon start-time file if present.
+pub fn remove_daemon_started(path: &Path) -> Result<()> {
+    if path.exists() {
+        fs::remove_file(path).map_err(FluxError::from)?;
+    }
+    Ok(())
 }
 
 /// Write the current process ID to the PID file.
@@ -177,6 +212,8 @@ pub async fn run_daemon(config: FluxConfig) -> Result<()> {
     }
 
     write_pid_file(&pid_path)?;
+    let started_path = daemon_started_path(&data_dir);
+    write_daemon_started(&started_path)?;
 
     let index = Arc::new(Mutex::new(load(&index_path)?));
     let rulesets = watch_rulesets_from_config(&config)?;
@@ -224,6 +261,7 @@ pub async fn run_daemon(config: FluxConfig) -> Result<()> {
     }
 
     remove_pid_file(&pid_path)?;
+    remove_daemon_started(&started_path)?;
     info!("FluxFS daemon stopped");
 
     Ok(())

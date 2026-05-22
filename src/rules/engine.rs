@@ -2,6 +2,7 @@
 
 use crate::errors::Result;
 use crate::index::store::FileIndex;
+use crate::reporting::activity::log_file_indexed;
 use crate::rules::actions::{organize_file, OrganizeResult};
 use crate::rules::matcher::find_matching_rule;
 use crate::scanner::metadata::FileEntry;
@@ -158,7 +159,9 @@ pub fn process_new_file(
     }
 
     if !dry_run {
+        let path = entry.path.clone();
         index.insert(entry);
+        log_file_indexed(activity_log, &path)?;
     }
 
     Ok(())

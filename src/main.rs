@@ -26,7 +26,10 @@ use index::{
     display::print_find_results, index_file_path, load, save, search, FileIndex, SearchOptions,
     SortMode,
 };
-use reporting::activity::activity_log_path;
+use reporting::activity::{
+    activity_log_path, log_scan_completed, read_entries, LogFilter, DEFAULT_LOG_LIMIT,
+};
+use reporting::status::print_status;
 use rules::{organize_index, OrganizeSummary};
 use scanner::scan_directories;
 use std::process;
@@ -58,12 +61,8 @@ fn run() -> anyhow::Result<()> {
             ext,
             sort,
         } => run_find(query, *path, *exact, ext.as_deref(), (*sort).into())?,
-        Commands::Status | Commands::Log => {
-            let cfg = load_config()?;
-            init_logging(&cfg)?;
-            log_startup(&cfg)?;
-            cli::commands::run_stub(&cli.command);
-        }
+        Commands::Status => run_status()?,
+        Commands::Log { all, today, count } => run_log(*all, *today, *count)?,
     }
 
     Ok(())
@@ -137,6 +136,10 @@ fn run_init() -> anyhow::Result<()> {
 
     let index_path = index_file_path(&cfg)?;
     save(&index, &index_path)?;
+
+    let activity_log = activity_log_path(&data_dir);
+    log_scan_completed(&activity_log, index.len(), summary.duration_ms)?;
+
     let loaded = load(&index_path)?;
     debug!(
         path = %index_path.display(),
@@ -270,6 +273,47 @@ fn run_organize(cli_dry_run: bool) -> anyhow::Result<()> {
         save(&index, &index_path)?;
         info!(path = %index_path.display(), "Index saved after organize");
     }
+
+    Ok(())
+}
+
+/// `flux status` — daemon state, index stats, and attention items.
+fn run_status() -> anyhow::Result<()> {
+    let cfg = load_config()?;
+    init_logging(&cfg)?;
+    log_startup(&cfg)?;
+
+    let data_dir = ensure_data_dir(&cfg)?;
+    let index_path = index_file_path(&cfg)?;
+    let index = load(&index_path)?;
+    let activity_log = activity_log_path(&data_dir);
+
+    print_status(&cfg, &data_dir, &index, &activity_log)?;
+
+    Ok(())
+}
+
+/// `flux log` — show recent activity entries.
+fn run_log(all: bool, today: bool, count: Option<usize>) -> anyhow::Result<()> {
+    let cfg = load_config()?;
+    init_logging(&cfg)?;
+
+    let data_dir = ensure_data_dir(&cfg)?;
+    let activity_log = activity_log_path(&data_dir);
+
+    let limit = if all {
+        None
+    } else {
+        Some(count.unwrap_or(DEFAULT_LOG_LIMIT))
+    };
+
+    let filter = LogFilter {
+        limit,
+        today_only: today,
+    };
+
+    let entries = read_entries(&activity_log, &filter)?;
+    reporting::activity::print_activity_log(&entries, !all);
 
     Ok(())
 }

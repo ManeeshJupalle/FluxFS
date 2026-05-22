@@ -63,7 +63,17 @@ pub enum Commands {
     /// Filesystem health overview
     Status,
     /// Show recent activity log
-    Log,
+    Log {
+        /// Show the entire log
+        #[arg(long)]
+        all: bool,
+        /// Only show entries from today
+        #[arg(long)]
+        today: bool,
+        /// Number of entries to show
+        #[arg(short = 'n', long = "count")]
+        count: Option<usize>,
+    },
     /// Find and handle duplicate files
     Dedup {
         /// Preview actions without modifying files
@@ -83,22 +93,3 @@ pub enum Commands {
     Config,
 }
 
-/// Human-readable name for a subcommand (used in stub handlers).
-pub fn command_name(command: &Commands) -> &'static str {
-    match command {
-        Commands::Init => "init",
-        Commands::Start { .. } => "start",
-        Commands::Stop => "stop",
-        Commands::Find { .. } => "find",
-        Commands::Status => "status",
-        Commands::Log => "log",
-        Commands::Dedup { .. } => "dedup",
-        Commands::Organize { .. } => "organize",
-        Commands::Config => "config",
-    }
-}
-
-/// Stub handler — prints not-implemented message until the command is wired.
-pub fn run_stub(command: &Commands) {
-    println!("Not implemented yet: {}", command_name(command));
-}

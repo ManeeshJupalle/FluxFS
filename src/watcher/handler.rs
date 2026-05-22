@@ -2,6 +2,7 @@
 
 use crate::errors::{FluxError, Result};
 use crate::index::store::FileIndex;
+use crate::reporting::activity::log_file_removed;
 use crate::rules::engine::{process_new_file, WatchRuleset};
 use crate::watcher::debounce::{DebouncedEvent, DebouncedKind, EventDebouncer};
 use notify::event::ModifyKind;
@@ -203,6 +204,9 @@ impl FluxWatcher {
             }
             DebouncedKind::Removed => {
                 index.remove(&event.path);
+                if !self.dry_run {
+                    log_file_removed(&self.activity_log, &event.path)?;
+                }
             }
             DebouncedKind::Renamed { to } => {
                 index.remove(&event.path);
