@@ -4,6 +4,7 @@ use crate::config::DuplicatesConfig;
 use crate::errors::{FluxError, Result};
 use crate::index::store::FileIndex;
 use crate::reporting::activity::{log_duplicate_found, log_duplicate_removed};
+use crate::rules::actions::move_file;
 use crate::scanner::metadata::FileEntry;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -125,7 +126,7 @@ pub fn resolve_duplicates(
             match strategy {
                 "trash" => {
                     let destination = unique_trash_path(trash_dir, path);
-                    fs::rename(path, &destination).map_err(|e| {
+                    move_file(path, &destination).map_err(|e| {
                         FluxError::Io(std::io::Error::new(
                             e.kind(),
                             format!("Failed to move duplicate {} to trash: {e}", path.display()),
@@ -238,6 +239,7 @@ mod tests {
     use tempfile::tempdir;
 
     fn entry(path: PathBuf, hash: &str, modified_offset_secs: i64) -> FileEntry {
+        let modified = Utc::now() - Duration::seconds(modified_offset_secs);
         FileEntry {
             path: path.clone(),
             filename: path
@@ -247,9 +249,10 @@ mod tests {
                 .into_owned(),
             extension: Some("txt".to_string()),
             size_bytes: 10,
-            modified: Utc::now() - Duration::seconds(modified_offset_secs),
+            modified,
             created: None,
             content_hash: Some(hash.to_string()),
+            hash_modified: Some(modified),
             is_dir: false,
         }
     }

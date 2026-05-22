@@ -58,6 +58,7 @@ mod tests {
             modified: Utc::now() - ChronoDuration::days(age_days),
             created: None,
             content_hash: None,
+            hash_modified: None,
             is_dir: false,
         }
     }

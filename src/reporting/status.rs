@@ -290,6 +290,7 @@ mod tests {
             modified: Utc::now() - ChronoDuration::days(120),
             created: None,
             content_hash: None,
+            hash_modified: None,
             is_dir: false,
         });
 

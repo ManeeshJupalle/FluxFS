@@ -69,8 +69,56 @@ pub struct SearchConfig {
 
 impl Default for FluxConfig {
     fn default() -> Self {
-        crate::config::parser::default_from_embedded()
-            .expect("embedded config/default.toml must be valid")
+        Self {
+            general: GeneralConfig {
+                data_dir: "~/.local/share/fluxfs".to_string(),
+                log_level: "info".to_string(),
+                dry_run: false,
+            },
+            watch: vec![WatchConfig {
+                path: "~/Downloads".to_string(),
+                rules: vec![
+                    WatchRule {
+                        pattern: "*.pdf".to_string(),
+                        destination: "~/Documents/PDFs/".to_string(),
+                    },
+                    WatchRule {
+                        pattern: "*.png,*.jpg,*.jpeg,*.gif,*.webp".to_string(),
+                        destination: "~/Pictures/Organized/".to_string(),
+                    },
+                    WatchRule {
+                        pattern: "*.dmg,*.exe,*.msi,*.pkg".to_string(),
+                        destination: "~/Installers/".to_string(),
+                    },
+                    WatchRule {
+                        pattern: "*.zip,*.tar.gz,*.rar,*.7z".to_string(),
+                        destination: "~/Archives/".to_string(),
+                    },
+                ],
+            }],
+            duplicates: DuplicatesConfig {
+                strategy: "trash".to_string(),
+                min_size: "1KB".to_string(),
+                max_hash_size: "1GB".to_string(),
+                exclude_paths: vec![
+                    ".git".to_string(),
+                    "node_modules".to_string(),
+                    ".venv".to_string(),
+                ],
+            },
+            index: IndexConfig {
+                exclude_patterns: vec![
+                    ".git".to_string(),
+                    "node_modules".to_string(),
+                    ".venv".to_string(),
+                    "__pycache__".to_string(),
+                    ".DS_Store".to_string(),
+                ],
+                max_depth: 20,
+                follow_symlinks: false,
+            },
+            search: SearchConfig { max_results: 20 },
+        }
     }
 }
 

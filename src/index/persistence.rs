@@ -16,14 +16,57 @@ pub fn index_file_path(config: &FluxConfig) -> Result<PathBuf> {
 }
 
 /// Save the index to disk using bincode.
+///
+/// The write is atomic: bytes are first written to a sibling `<name>.tmp`
+/// file, then `fs::rename` swaps it into place. A crash or power loss in the
+/// middle of the write leaves the original `index.bin` intact (or, if there
+/// was none, leaves only the `.tmp` file behind, which the next save
+/// overwrites). On Rust 1.85+, `fs::rename` replaces an existing destination
+/// on both Unix and Windows; older toolchains fall through to a
+/// `remove_file` + `rename` retry.
 pub fn save(index: &FileIndex, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(FluxError::from)?;
     }
     let bytes = bincode::serialize(index)
         .map_err(|e| FluxError::Serialization(format!("Failed to serialize index: {e}")))?;
-    fs::write(path, bytes).map_err(FluxError::from)?;
+
+    let tmp_path = tmp_sibling(path);
+    fs::write(&tmp_path, &bytes).map_err(|e| {
+        FluxError::Io(std::io::Error::new(
+            e.kind(),
+            format!("Failed to write temp index {}: {e}", tmp_path.display()),
+        ))
+    })?;
+
+    if let Err(err) = fs::rename(&tmp_path, path) {
+        // Older Windows toolchains can reject rename-over-existing.
+        if path.exists() && fs::remove_file(path).is_ok() {
+            fs::rename(&tmp_path, path).map_err(|e| {
+                FluxError::Io(std::io::Error::new(
+                    e.kind(),
+                    format!("Failed to swap index {} into place: {e}", path.display()),
+                ))
+            })?;
+        } else {
+            // Best-effort cleanup of the leftover temp file.
+            let _ = fs::remove_file(&tmp_path);
+            return Err(FluxError::Io(std::io::Error::new(
+                err.kind(),
+                format!("Failed to swap index {} into place: {err}", path.display()),
+            )));
+        }
+    }
+
     Ok(())
+}
+
+fn tmp_sibling(path: &Path) -> std::path::PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".tmp");
+    let mut tmp = path.to_path_buf();
+    tmp.set_file_name(name);
+    tmp
 }
 
 /// Load the index from disk. Missing or corrupt files return an empty index.
@@ -74,6 +117,7 @@ mod tests {
             modified: Utc::now(),
             created: None,
             content_hash: None,
+            hash_modified: None,
             is_dir: false,
         }
     }

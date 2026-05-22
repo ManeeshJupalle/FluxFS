@@ -24,7 +24,10 @@ pub fn organize_file(
     dry_run: bool,
     activity_log: &Path,
 ) -> Result<OrganizeResult> {
-    let dest_path = resolve_destination(&rule.destination, &entry.filename)?;
+    // `resolve_destination` only inspects whether the destination directory
+    // currently contains a file with the same name; it must not create the
+    // directory itself, or dry-run would leave behind empty folders.
+    let dest_path = resolve_destination(&rule.destination, &entry.filename);
 
     if paths_equivalent(&entry.path, &dest_path) {
         return Ok(OrganizeResult::Skipped {
@@ -40,18 +43,17 @@ pub fn organize_file(
         });
     }
 
-    if let Some(parent) = dest_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| {
-            FluxError::Rule(format!(
-                "Cannot create destination directory {}: {e}",
-                parent.display()
-            ))
-        })?;
-    }
+    // Real run only: create the destination directory now.
+    fs::create_dir_all(&rule.destination).map_err(|e| {
+        FluxError::Rule(format!(
+            "Cannot create destination directory {}: {e}",
+            rule.destination.display()
+        ))
+    })?;
 
     match rule.action {
         RuleAction::Move => {
-            fs::rename(&entry.path, &dest_path).map_err(map_filesystem_error)?;
+            move_file(&entry.path, &dest_path).map_err(map_filesystem_error)?;
             log_file_moved(activity_log, &entry.path, &dest_path, &rule.label)?;
             Ok(OrganizeResult::Moved {
                 from: entry.path.clone(),
@@ -69,12 +71,38 @@ pub fn organize_file(
     }
 }
 
-fn resolve_destination(dest_dir: &Path, filename: &str) -> Result<PathBuf> {
-    fs::create_dir_all(dest_dir).map_err(FluxError::from)?;
+/// Move a file with a cross-device fallback: if `fs::rename` reports the
+/// source and destination are on different filesystems, copy-then-delete
+/// instead. Used by both rule moves and dedup trashing.
+pub fn move_file(from: &Path, to: &Path) -> io::Result<()> {
+    match fs::rename(from, to) {
+        Ok(()) => Ok(()),
+        Err(err) if is_cross_device_error(&err) => {
+            fs::copy(from, to)?;
+            fs::remove_file(from)
+        }
+        Err(err) => Err(err),
+    }
+}
 
-    let mut candidate = dest_dir.join(filename);
+fn is_cross_device_error(err: &io::Error) -> bool {
+    if err.kind() == io::ErrorKind::CrossesDevices {
+        return true;
+    }
+    match err.raw_os_error() {
+        Some(18) => true, // EXDEV (Linux/macOS)
+        Some(17) => true, // ERROR_NOT_SAME_DEVICE (Windows)
+        _ => false,
+    }
+}
+
+/// Compute the destination path for a file without touching the filesystem.
+/// If a file with the same name already exists at the destination, suffix the
+/// stem with `_1`, `_2`, ... until a free name is found.
+fn resolve_destination(dest_dir: &Path, filename: &str) -> PathBuf {
+    let candidate = dest_dir.join(filename);
     if !candidate.exists() {
-        return Ok(candidate);
+        return candidate;
     }
 
     let path = Path::new(filename);
@@ -89,9 +117,9 @@ fn resolve_destination(dest_dir: &Path, filename: &str) -> Result<PathBuf> {
 
     let mut counter = 1u32;
     loop {
-        candidate = dest_dir.join(format!("{stem}_{counter}{extension}"));
-        if !candidate.exists() {
-            return Ok(candidate);
+        let next = dest_dir.join(format!("{stem}_{counter}{extension}"));
+        if !next.exists() {
+            return next;
         }
         counter += 1;
     }
@@ -137,6 +165,7 @@ mod tests {
             modified: Utc::now(),
             created: None,
             content_hash: None,
+            hash_modified: None,
             is_dir: false,
         }
     }
@@ -187,6 +216,25 @@ mod tests {
         ));
         assert!(matches!(err, FluxError::Rule(_)));
         assert!(err.to_string().contains("full"));
+    }
+
+    #[test]
+    fn dry_run_does_not_create_destination_directory() {
+        let dir = tempdir().expect("tempdir");
+        let source = dir.path().join("keep.txt");
+        let dest_dir = dir.path().join("never/made");
+        std::fs::write(&source, b"x").expect("write");
+
+        let rule = move_rule(&dest_dir);
+        let log_path = dir.path().join("activity.jsonl");
+        let result = organize_file(&entry_at(&source), &rule, true, &log_path).expect("organize");
+
+        assert!(matches!(result, OrganizeResult::DryRun { .. }));
+        assert!(source.exists(), "source must be left in place");
+        assert!(
+            !dest_dir.exists(),
+            "dry-run must not create destination directory"
+        );
     }
 
     #[test]

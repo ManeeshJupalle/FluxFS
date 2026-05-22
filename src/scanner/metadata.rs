@@ -15,6 +15,15 @@ pub struct FileEntry {
     pub modified: DateTime<Utc>,
     pub created: Option<DateTime<Utc>>,
     pub content_hash: Option<String>,
+    /// The on-disk modified time as observed when [`content_hash`] was last
+    /// computed. Used to invalidate stale hashes: if the file's current
+    /// modified time differs from this stamp, the cached hash no longer
+    /// reflects the file content and must be recomputed. `None` for entries
+    /// that have never been hashed (or that were serialized before this
+    /// field existed; bincode's default for missing fields is used via
+    /// [`serde(default)`]).
+    #[serde(default)]
+    pub hash_modified: Option<DateTime<Utc>>,
     pub is_dir: bool,
 }
 
@@ -49,6 +58,7 @@ impl FileEntry {
             modified,
             created,
             content_hash: None,
+            hash_modified: None,
             is_dir: metadata.is_dir(),
         })
     }

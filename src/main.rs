@@ -203,6 +203,13 @@ fn run_dedup(cli_dry_run: bool, confirm_delete: bool) -> anyhow::Result<()> {
         "Hashing complete for dedup"
     );
 
+    // Persist any newly computed (or refreshed) hashes immediately so that a
+    // dry-run or report-only invocation does not throw away expensive work.
+    // Without this, the next `flux dedup` would re-hash the same files.
+    if hash_stats.hashed > 0 {
+        save(&index, &index_path)?;
+    }
+
     let report = build_report(&index);
     print_duplicate_report(&report, "Duplicate scan");
 

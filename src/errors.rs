@@ -66,6 +66,16 @@ impl FluxError {
             FluxError::Rule(_) => Some(
                 "Check destination paths in your config and ensure FluxFS can write there.".into(),
             ),
+            FluxError::Scanner(_) => Some(
+                "Check file permissions and that the path still exists. \
+                 Re-run `flux init` to rebuild the index after fixing access."
+                    .into(),
+            ),
+            FluxError::Serialization(_) => Some(
+                "The on-disk index or activity log may be corrupt. \
+                 Re-run `flux init` to rebuild a fresh index."
+                    .into(),
+            ),
             FluxError::Io(err) if err.kind() == io::ErrorKind::StorageFull => {
                 Some("Filesystem is full. Free space before moving or copying files.".into())
             }

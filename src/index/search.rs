@@ -5,6 +5,7 @@ use crate::scanner::metadata::FileEntry;
 use glob::Pattern as GlobPattern;
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Matcher, Utf32Str};
+use std::borrow::Cow;
 use std::time::{Duration, Instant};
 
 /// How to sort search results.
@@ -84,10 +85,10 @@ fn search_fuzzy(index: &FileIndex, query: &str, options: &SearchOptions) -> Vec<
         .filter(|entry| !entry.is_dir)
         .filter(|entry| matches_extension(entry, options))
         .filter_map(|entry| {
-            let haystack = if options.match_path {
-                entry.path.display().to_string()
+            let haystack: Cow<str> = if options.match_path {
+                Cow::Owned(entry.path.display().to_string())
             } else {
-                entry.filename.clone()
+                Cow::Borrowed(entry.filename.as_str())
             };
             let hay = Utf32Str::new(&haystack, &mut buf);
             let score = pattern.score(hay, &mut matcher)?;
@@ -110,10 +111,10 @@ fn search_glob(index: &FileIndex, query: &str, options: &SearchOptions) -> Vec<S
         .filter(|entry| !entry.is_dir)
         .filter(|entry| matches_extension(entry, options))
         .filter_map(|entry| {
-            let target = if options.match_path {
-                entry.path.display().to_string()
+            let target: Cow<str> = if options.match_path {
+                Cow::Owned(entry.path.display().to_string())
             } else {
-                entry.filename.clone()
+                Cow::Borrowed(entry.filename.as_str())
             };
             if pattern.matches(&target) {
                 Some(SearchResult {
@@ -183,6 +184,7 @@ mod tests {
             modified: Utc::now() - ChronoDuration::days(age_days),
             created: None,
             content_hash: None,
+            hash_modified: None,
             is_dir: false,
         }
     }

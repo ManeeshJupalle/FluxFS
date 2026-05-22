@@ -4,6 +4,7 @@ use crate::config::DuplicatesConfig;
 use crate::errors::{FluxError, Result};
 use crate::index::store::FileIndex;
 use crate::scanner::metadata::FileEntry;
+use chrono::{DateTime, Utc};
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 use std::fs::File;
@@ -24,7 +25,19 @@ pub struct HashStats {
 }
 
 /// Compute SHA-256 hex digest for a file on disk.
+///
+/// Test-only helper. Production code uses [`hash_file_with_mtime`] directly
+/// so it can record the modified time observed at hash time alongside the
+/// digest (required for stale-hash detection).
+#[cfg(test)]
 pub fn hash_file(path: &Path) -> Result<String> {
+    hash_file_with_mtime(path).map(|(digest, _)| digest)
+}
+
+/// Like [`hash_file`], but also returns the file's modified time as observed
+/// after the read completed. The stamp lets the index detect later mtime
+/// changes and invalidate the cached hash.
+fn hash_file_with_mtime(path: &Path) -> Result<(String, DateTime<Utc>)> {
     let mut file = File::open(path).map_err(|e| {
         FluxError::Scanner(format!("Cannot open {} for hashing: {e}", path.display()))
     })?;
@@ -41,7 +54,24 @@ pub fn hash_file(path: &Path) -> Result<String> {
         hasher.update(&buffer[..bytes_read]);
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    let modified: DateTime<Utc> = file
+        .metadata()
+        .map_err(|e| {
+            FluxError::Scanner(format!(
+                "Cannot read mtime for {} after hashing: {e}",
+                path.display()
+            ))
+        })?
+        .modified()
+        .map_err(|e| {
+            FluxError::Scanner(format!(
+                "Filesystem does not expose mtime for {}: {e}",
+                path.display()
+            ))
+        })?
+        .into();
+
+    Ok((format!("{:x}", hasher.finalize()), modified))
 }
 
 /// Hash all unhashed entries in the index in parallel.
@@ -85,10 +115,11 @@ pub fn hash_all(index: &mut FileIndex, duplicates: &DuplicatesConfig) -> Result<
     let mut updates = Vec::new();
     let mut failed = 0usize;
 
-    let results: Vec<(PathBuf, Option<String>)> = candidates
+    type HashResult = Option<(String, DateTime<Utc>)>;
+    let results: Vec<(PathBuf, HashResult)> = candidates
         .par_iter()
         .map(|(path, _)| {
-            let hash = hash_file(path).ok();
+            let hash = hash_file_with_mtime(path).ok();
             let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
             if done == total || done.is_multiple_of(PROGRESS_INTERVAL) {
                 let pct = (done as f64 / total as f64) * 100.0;
@@ -105,7 +136,7 @@ pub fn hash_all(index: &mut FileIndex, duplicates: &DuplicatesConfig) -> Result<
 
     for (path, hash) in results {
         match hash {
-            Some(digest) => updates.push((path, digest)),
+            Some((digest, mtime)) => updates.push((path, digest, mtime)),
             None => failed += 1,
         }
     }
@@ -169,6 +200,7 @@ mod tests {
             modified: Utc::now(),
             created: None,
             content_hash: None,
+            hash_modified: None,
             is_dir: false,
             path,
         }
@@ -255,6 +287,52 @@ mod tests {
         assert_eq!(stats.hashed, 0);
         assert_eq!(stats.skipped, 1);
         assert!(index.get(&path).unwrap().content_hash.is_none());
+    }
+
+    #[test]
+    fn hash_all_rehashes_when_mtime_changes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("file.txt");
+        std::fs::write(&path, b"first").expect("write v1");
+
+        let mut index = FileIndex::new();
+        let original_entry = FileEntry::from_path(&path).expect("entry");
+        index.insert(original_entry);
+
+        let cfg = DuplicatesConfig {
+            strategy: "report".to_string(),
+            min_size: "1B".to_string(),
+            max_hash_size: "1GB".to_string(),
+            exclude_paths: vec![],
+        };
+
+        let stats = hash_all(&mut index, &cfg).expect("hash 1");
+        assert_eq!(stats.hashed, 1);
+        let first_hash = index.get(&path).unwrap().content_hash.clone();
+        let first_stamp = index.get(&path).unwrap().hash_modified;
+        assert!(first_hash.is_some());
+        assert!(first_stamp.is_some());
+
+        // Rewrite with new content and force a different mtime, then re-stat
+        // the file to update the index entry's modified field — simulating a
+        // scan that observed the change.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::fs::write(&path, b"second-different-size").expect("write v2");
+
+        // Calling hash_all WITHOUT updating the index entry: the staleness
+        // filter must restat the file and detect the divergence on its own.
+        let stats2 = hash_all(&mut index, &cfg).expect("hash 2");
+        assert_eq!(
+            stats2.hashed, 1,
+            "stale entry should be re-hashed (current mtime != stored stamp)"
+        );
+
+        let second_hash = index.get(&path).unwrap().content_hash.clone();
+        assert!(second_hash.is_some());
+        assert_ne!(
+            first_hash, second_hash,
+            "hash should change when file content changes"
+        );
     }
 
     #[test]

@@ -9,12 +9,15 @@ use crate::watcher::handler::FluxWatcher;
 use chrono::{DateTime, Utc};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::signal;
 use tokio::time;
 use tracing::{info, warn};
+
+#[cfg(not(windows))]
+use std::process::Command;
 
 /// PID filename inside the data directory.
 pub const PID_FILENAME: &str = "flux.pid";
@@ -96,15 +99,23 @@ pub fn is_process_alive(pid: u32) -> bool {
 
     #[cfg(windows)]
     {
-        let output = Command::new("tasklist")
-            .args(["/FI", &format!("PID eq {pid}")])
-            .output();
-        match output {
-            Ok(output) => {
-                let text = String::from_utf8_lossy(&output.stdout);
-                text.contains(&pid.to_string())
+        // Use the Win32 API directly: shelling out to `tasklist` is unreliable
+        // (it can return ERROR: Access denied under certain security contexts).
+        // PROCESS_QUERY_LIMITED_INFORMATION succeeds for any process the caller
+        // can see, including those owned by other users (when permitted).
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if handle.is_null() {
+                false
+            } else {
+                CloseHandle(handle);
+                true
             }
-            Err(_) => false,
         }
     }
 
@@ -172,14 +183,27 @@ pub fn stop_daemon(data_dir: &Path) -> Result<()> {
 fn terminate_process(pid: u32) -> Result<()> {
     #[cfg(windows)]
     {
-        let status = Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .status()
-            .map_err(FluxError::from)?;
-        if !status.success() {
-            return Err(FluxError::Watcher(format!(
-                "Failed to stop daemon process {pid}."
-            )));
+        // Use the Win32 API directly instead of shelling to `taskkill`, which
+        // can fail under restricted security contexts.
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, TerminateProcess, PROCESS_TERMINATE,
+        };
+
+        unsafe {
+            let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
+            if handle.is_null() {
+                return Err(FluxError::Watcher(format!(
+                    "Cannot open daemon process {pid} for termination (already exited or access denied)."
+                )));
+            }
+            let ok = TerminateProcess(handle, 0);
+            CloseHandle(handle);
+            if ok == 0 {
+                return Err(FluxError::Watcher(format!(
+                    "Failed to terminate daemon process {pid}."
+                )));
+            }
         }
     }
 
@@ -224,6 +248,7 @@ pub async fn run_daemon(config: FluxConfig) -> Result<()> {
 
     let (tx, rx) = std::sync::mpsc::channel();
     let flux = FluxWatcher::new(Arc::clone(&index), rulesets, activity_log.clone(), dry_run);
+    let shutdown = flux.shutdown_handle();
     let watcher = FluxWatcher::build_watcher(tx, &watch_paths)?;
 
     info!(pid = std::process::id(), "FluxFS daemon started");
@@ -249,6 +274,11 @@ pub async fn run_daemon(config: FluxConfig) -> Result<()> {
     shutdown_signal().await;
 
     info!("FluxFS daemon shutting down");
+
+    // Signal the watcher's blocking loop to exit. Without this, awaiting the
+    // task hangs forever — the loop's channel sender is owned by the watcher
+    // inside the same task, so the channel never disconnects on its own.
+    shutdown.store(true, Ordering::Relaxed);
 
     if let Err(err) = watcher_task.await {
         warn!(error = %err, "Watcher task ended unexpectedly");

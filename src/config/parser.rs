@@ -12,6 +12,9 @@ pub const CONFIG_FILENAME: &str = "config.toml";
 pub const CONFIG_DIR_NAME: &str = "fluxfs";
 
 /// Embedded reference defaults (matches `config/default.toml` in the repo).
+/// Used by tests to verify [`FluxConfig::default`] stays in sync with the
+/// shipped reference TOML.
+#[cfg(test)]
 const EMBEDDED_DEFAULT: &str = include_str!("../../config/default.toml");
 
 /// Returns the platform config file path (`~/.config/fluxfs/config.toml` on Unix).
@@ -63,6 +66,11 @@ pub fn parse_config_str(contents: &str) -> Result<FluxConfig> {
 }
 
 /// Parse the embedded default config (must match repo `config/default.toml`).
+///
+/// Test-only: production code uses [`FluxConfig::default`], which is
+/// hand-constructed; this helper exists to verify the reference TOML still
+/// parses and matches the hand-built defaults.
+#[cfg(test)]
 pub fn default_from_embedded() -> Result<FluxConfig> {
     parse_config_str(EMBEDDED_DEFAULT)
 }

@@ -45,10 +45,15 @@ impl FileIndex {
     }
 
     /// Build an index from scan results and update statistics.
+    ///
+    /// `refresh_stats` is called exactly once at the end — bulk inserts skip
+    /// the per-insert stat recalculation, so building the index is O(n) in the
+    /// number of entries (the previous implementation called `insert` per
+    /// entry, which recomputed `total_size` on each call → O(n²)).
     pub fn from_entries(entries: Vec<FileEntry>, scan_duration_ms: u64) -> Self {
         let mut index = Self::new();
         for entry in entries {
-            index.insert(entry);
+            index.bulk_insert(entry);
         }
         index.stats.last_scan = Utc::now();
         index.stats.scan_duration_ms = scan_duration_ms;
@@ -64,6 +69,16 @@ impl FileIndex {
         self.add_hash_group_entry(&entry);
         self.entries.insert(entry.path.clone(), entry);
         self.refresh_stats();
+    }
+
+    /// Insert without recomputing stats. Caller must invoke
+    /// [`Self::refresh_stats`] when the bulk insert is complete.
+    fn bulk_insert(&mut self, entry: FileEntry) {
+        if let Some(old) = self.entries.remove(&entry.path) {
+            self.remove_hash_group_entry(&old);
+        }
+        self.add_hash_group_entry(&entry);
+        self.entries.insert(entry.path.clone(), entry);
     }
 
     /// Remove an entry by path.
@@ -108,20 +123,64 @@ impl FileIndex {
         self.entries.values()
     }
 
-    /// Paths and entries that do not yet have a content hash.
+    /// Paths and entries that need (re)hashing.
+    ///
+    /// An entry needs hashing when:
+    /// - It has never been hashed (`content_hash` is `None`), or
+    /// - The file's on-disk modified time differs from the stamp recorded at
+    ///   the last hash (`hash_modified`). This catches files that changed
+    ///   outside the watcher's view — for example, when an event was missed
+    ///   or the daemon was not running.
+    ///
+    /// One `stat` syscall per indexed entry is performed to detect external
+    /// changes. Files that no longer exist are left as-is (the hash is kept
+    /// rather than wiped, since the index may catch up via a future event).
     pub fn entries_needing_hash(&self) -> Vec<(PathBuf, FileEntry)> {
         self.entries
             .iter()
-            .filter(|(_, entry)| !entry.is_dir && entry.content_hash.is_none())
-            .map(|(path, entry)| (path.clone(), entry.clone()))
+            .filter_map(|(path, entry)| {
+                if entry.is_dir {
+                    return None;
+                }
+
+                let current_mtime: Option<chrono::DateTime<Utc>> = std::fs::metadata(path)
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .map(chrono::DateTime::<Utc>::from);
+
+                let needs_hash = match (&entry.content_hash, current_mtime, entry.hash_modified) {
+                    // Never hashed.
+                    (None, _, _) => true,
+                    // Hashed previously but file disappeared — leave alone.
+                    (Some(_), None, _) => false,
+                    // Hashed previously, file still here, but no stamp (legacy
+                    // entries from before `hash_modified` existed) → rehash.
+                    (Some(_), Some(_), None) => true,
+                    // Hashed previously and stamped → rehash only if mtime
+                    // diverged from the stamp.
+                    (Some(_), Some(curr), Some(stamp)) => curr != stamp,
+                };
+
+                if needs_hash {
+                    Some((path.clone(), entry.clone()))
+                } else {
+                    None
+                }
+            })
             .collect()
     }
 
     /// Apply computed hashes and rebuild duplicate lookup groups.
-    pub fn apply_content_hashes(&mut self, updates: Vec<(PathBuf, String)>) {
-        for (path, hash) in updates {
+    ///
+    /// Each update is `(path, hash, mtime_at_hash_time)`. The mtime is stored
+    /// alongside the hash so that future calls to [`Self::entries_needing_hash`]
+    /// can detect when the on-disk file has been modified since the cached
+    /// hash was taken.
+    pub fn apply_content_hashes(&mut self, updates: Vec<(PathBuf, String, chrono::DateTime<Utc>)>) {
+        for (path, hash, hashed_at) in updates {
             if let Some(entry) = self.entries.get_mut(&path) {
                 entry.content_hash = Some(hash);
+                entry.hash_modified = Some(hashed_at);
             }
         }
         self.rebuild_hash_groups();
@@ -197,14 +256,16 @@ mod tests {
     use std::path::PathBuf;
 
     fn sample_entry(path: &str, hash: Option<&str>) -> FileEntry {
+        let modified = Utc::now();
         FileEntry {
             path: PathBuf::from(path),
             filename: path.rsplit('/').next().unwrap_or(path).to_string(),
             extension: Some("txt".to_string()),
             size_bytes: 100,
-            modified: Utc::now(),
+            modified,
             created: None,
             content_hash: hash.map(str::to_string),
+            hash_modified: hash.map(|_| modified),
             is_dir: false,
         }
     }

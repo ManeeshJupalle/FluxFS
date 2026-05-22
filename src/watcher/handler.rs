@@ -8,6 +8,7 @@ use crate::watcher::debounce::{DebouncedEvent, DebouncedKind, EventDebouncer};
 use notify::event::ModifyKind;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
@@ -22,6 +23,7 @@ pub struct FluxWatcher {
     activity_log: PathBuf,
     dry_run: bool,
     debounce_ms: u64,
+    shutdown: Arc<AtomicBool>,
 }
 
 impl FluxWatcher {
@@ -38,7 +40,15 @@ impl FluxWatcher {
             activity_log,
             dry_run,
             debounce_ms: DEBOUNCE_MS,
+            shutdown: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Clone the shutdown flag so an outside task can request the event loop
+    /// to exit. Setting this flag to `true` causes [`Self::run_event_loop`]
+    /// to return on its next iteration (within ~one recv timeout, 50 ms).
+    pub fn shutdown_handle(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.shutdown)
     }
 
     /// Set debounce period (useful in tests).
@@ -116,7 +126,13 @@ impl FluxWatcher {
         Ok(())
     }
 
-    /// Process events until the channel disconnects.
+    /// Process events until the channel disconnects or the shutdown flag is
+    /// set via [`Self::shutdown_handle`].
+    ///
+    /// Important: the channel sender is held alive inside `watcher`, which is
+    /// owned by this method, so the channel never naturally disconnects while
+    /// the loop is running. The shutdown flag is the supported way to make the
+    /// loop return, e.g. when the daemon receives Ctrl+C or SIGTERM.
     pub fn run_event_loop(
         &self,
         rx: std::sync::mpsc::Receiver<notify::Result<Event>>,
@@ -126,6 +142,10 @@ impl FluxWatcher {
         let mut debouncer = EventDebouncer::new(self.debounce_ms);
 
         loop {
+            if self.shutdown.load(Ordering::Relaxed) {
+                break;
+            }
+
             while let Ok(event) = rx.try_recv() {
                 self.enqueue_event(&mut debouncer, event);
             }
@@ -256,7 +276,8 @@ mod tests {
         .with_debounce_ms(50);
 
         let (tx, rx) = mpsc::channel();
-        let watcher = FluxWatcher::build_watcher(tx, std::slice::from_ref(&watch)).expect("watcher");
+        let watcher =
+            FluxWatcher::build_watcher(tx, std::slice::from_ref(&watch)).expect("watcher");
 
         thread::sleep(Duration::from_millis(100));
         std::fs::write(watch.join("new_file.txt"), b"hello").expect("write");
@@ -265,6 +286,43 @@ mod tests {
             .expect("run");
 
         assert_eq!(index.lock().expect("lock").len(), 1);
+    }
+
+    #[test]
+    fn run_event_loop_exits_when_shutdown_flag_set() {
+        let dir = tempdir().expect("tempdir");
+        let watch = dir.path().join("watch");
+        std::fs::create_dir_all(&watch).expect("mkdir");
+
+        let index = Arc::new(Mutex::new(FileIndex::new()));
+        let flux = FluxWatcher::new(
+            Arc::clone(&index),
+            vec![],
+            dir.path().join("activity.jsonl"),
+            false,
+        )
+        .with_debounce_ms(20);
+        let shutdown = flux.shutdown_handle();
+
+        let (tx, rx) = mpsc::channel();
+        let watcher =
+            FluxWatcher::build_watcher(tx, std::slice::from_ref(&watch)).expect("watcher");
+
+        let handle = thread::spawn(move || flux.run_event_loop(rx, watcher));
+
+        // Let the loop start, then request shutdown.
+        thread::sleep(Duration::from_millis(100));
+        shutdown.store(true, Ordering::Relaxed);
+
+        let started = std::time::Instant::now();
+        let result = handle.join().expect("watcher thread");
+        let elapsed = started.elapsed();
+
+        result.expect("run_event_loop returned an error");
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "shutdown took {elapsed:?}, expected fast exit"
+        );
     }
 
     #[test]
@@ -293,7 +351,8 @@ mod tests {
         .with_debounce_ms(50);
 
         let (tx, rx) = mpsc::channel();
-        let watcher = FluxWatcher::build_watcher(tx, std::slice::from_ref(&watch)).expect("watcher");
+        let watcher =
+            FluxWatcher::build_watcher(tx, std::slice::from_ref(&watch)).expect("watcher");
 
         thread::sleep(Duration::from_millis(100));
         let source = watch.join("doc.pdf");
