@@ -16,7 +16,7 @@ trap 'rm -rf "$STAGING"' EXIT
 APP_DIR="$STAGING/FluxFS"
 mkdir -p "$APP_DIR"
 
-cp target/release/flux target/release/fluxfs-tray "$APP_DIR/"
+cp target/release/flux target/release/fluxfs-tray target/release/fluxfs-settings "$APP_DIR/"
 ln -sf flux "$APP_DIR/fluxfs"
 
 cat > "$APP_DIR/Setup.command" <<'EOF'

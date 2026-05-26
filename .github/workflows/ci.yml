@@ -29,9 +29,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install Linux tray dependencies
+      - name: Install Linux GUI dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxdo-dev
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxdo-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
 
       - name: cargo fmt
         run: cargo fmt --all -- --check
@@ -54,18 +54,19 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install Linux tray dependencies
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxdo-dev
+      - name: Install Linux GUI dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxdo-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
 
       - name: cargo build --release
         run: cargo build --release --bins
 
       - name: Report binary sizes
         run: |
-          ls -lh target/release/flux target/release/fluxfs target/release/fluxfs-tray
-          echo "flux bytes:    $(wc -c < target/release/flux)"
-          echo "fluxfs bytes: $(wc -c < target/release/fluxfs)"
-          echo "tray bytes:   $(wc -c < target/release/fluxfs-tray)"
+          ls -lh target/release/flux target/release/fluxfs target/release/fluxfs-tray target/release/fluxfs-settings
+          echo "flux bytes:      $(wc -c < target/release/flux)"
+          echo "fluxfs bytes:   $(wc -c < target/release/fluxfs)"
+          echo "tray bytes:     $(wc -c < target/release/fluxfs-tray)"
+          echo "settings bytes: $(wc -c < target/release/fluxfs-settings)"
 
   release-linux:
     name: Package Linux (.deb + tarball)
@@ -79,7 +80,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxdo-dev
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxdo-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
 
       - name: Build release binaries
         run: cargo build --release --bins
@@ -93,7 +94,7 @@ jobs:
           cargo deb --no-build
           mkdir -p dist
           cp target/debian/*.deb dist/
-          tar czf dist/fluxfs-linux-x86_64.tar.gz -C target/release flux fluxfs fluxfs-tray
+          tar czf dist/fluxfs-linux-x86_64.tar.gz -C target/release flux fluxfs fluxfs-tray fluxfs-settings
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -148,7 +149,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           & packaging/windows/build-installer.ps1 -SkipBuild
-          Compress-Archive -Path target/release/flux.exe,target/release/fluxfs.exe,target/release/fluxfs-tray.exe -DestinationPath dist/fluxfs-windows-x86_64.zip
+          Compress-Archive -Path target/release/flux.exe,target/release/fluxfs.exe,target/release/fluxfs-tray.exe,target/release/fluxfs-settings.exe -DestinationPath dist/fluxfs-windows-x86_64.zip
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4

@@ -4,6 +4,7 @@ pub mod cli;
 pub mod config;
 pub mod dedup;
 pub mod errors;
+pub mod gui;
 pub mod hasher;
 pub mod index;
 pub mod ipc;

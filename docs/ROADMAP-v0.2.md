@@ -171,13 +171,17 @@ Extend `.github/workflows/ci.yml` release job:
 | D6 | Status dashboard | File count, daemon uptime, weekly stats (reuse `status.rs` data) |
 | D7 | Dry-run preview | "Test rules" on current Downloads |
 
-### Tech recommendation
+### Tech (implemented)
 
-**Tauri 2 + React/Svelte** in `crates/fluxfs-app/`:
+**eframe + egui** in-crate GUI (`src/gui/`, binary `fluxfs-settings`):
 
-- Reuses tray crate infrastructure
-- Calls existing Rust engine via Tauri commands (load config, save config, trigger organize)
-- Config read/write through existing `config/parser.rs`
+- Pure Rust — no Node/WebView stack
+- Config read/write through existing `config/parser.rs` (`save_user_config`)
+- Tray launches settings via `settings_binary_path()` / `flux settings` fallback
+
+### Original recommendation (not used)
+
+**Tauri 2 + React/Svelte** in `crates/fluxfs-app/` — deferred; egui chosen for smaller deps and shared crate layout.
 
 ### Out of scope for v0.2.0
 
@@ -231,12 +235,13 @@ We work **strictly phase by phase**. Do not start Phase B until Phase A acceptan
 4. ✅ Linux `.deb` via cargo-deb + maintainer scripts
 5. ✅ GitHub Release CI (deb, dmg, exe, tarballs)
 
-### Phase D — preview
+### Phase D — done
 
-1. Scaffold `crates/fluxfs-app/`
-2. Tauri commands wrapping config parser
-3. Rule editor UI
-4. Activity + status panels
+1. ✅ **`fluxfs-settings`** binary — egui/eframe settings window (Status, Watch & Rules, Dedup, Activity)
+2. ✅ **`flux settings`** CLI + tray **Settings…** menu item
+3. ✅ Rule editor with pattern + destination rows; folder pickers (`rfd`)
+4. ✅ Activity viewer + status dashboard (reuses `status.rs` / `activity.jsonl`)
+5. ✅ **Test rules** — dry-run organize from GUI; config save via `save_user_config()`
 
 ---
 

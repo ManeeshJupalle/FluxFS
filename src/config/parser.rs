@@ -81,6 +81,13 @@ pub fn save_default_config() -> Result<PathBuf> {
     save_config_to_path(&path, &FluxConfig::default())
 }
 
+/// Validate and write config to the user's config file path.
+pub fn save_user_config(config: &FluxConfig) -> Result<PathBuf> {
+    validate_config(config)?;
+    let path = config_file_path()?;
+    save_config_to_path(&path, config)
+}
+
 /// Write config to a specific path.
 pub fn save_config_to_path(path: &Path, config: &FluxConfig) -> Result<PathBuf> {
     if let Some(parent) = path.parent() {

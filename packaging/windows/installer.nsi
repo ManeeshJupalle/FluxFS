@@ -5,7 +5,7 @@
 !include "MUI2.nsh"
 
 !define PRODUCT_NAME "FluxFS"
-!define PRODUCT_VERSION "0.2.0-alpha.2"
+!define PRODUCT_VERSION "0.2.0"
 !define PRODUCT_PUBLISHER "Maneesh Jupalle"
 
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
@@ -24,6 +24,7 @@ Section "Install"
   SetOutPath $INSTDIR
   File "..\..\target\release\flux.exe"
   File "..\..\target\release\fluxfs-tray.exe"
+  File "..\..\target\release\fluxfs-settings.exe"
   CopyFiles /SILENT "$INSTDIR\flux.exe" "$INSTDIR\fluxfs.exe"
 
   ; Add install directory to user PATH via PowerShell
@@ -43,6 +44,7 @@ Section "Uninstall"
   Delete "$INSTDIR\flux.exe"
   Delete "$INSTDIR\fluxfs.exe"
   Delete "$INSTDIR\fluxfs-tray.exe"
+  Delete "$INSTDIR\fluxfs-settings.exe"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
 SectionEnd

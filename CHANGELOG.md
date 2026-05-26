@@ -2,6 +2,16 @@
 
 All notable changes to FluxFS are documented here.
 
+## [0.2.0] - 2026-05-21
+
+### Added — Phase D (settings GUI)
+- **`fluxfs-settings`** binary — egui/eframe settings window (Status, Watch & Rules, Dedup, Activity)
+- **`flux settings`** CLI command — opens the settings GUI
+- Tray menu **Settings…** — launches `fluxfs-settings` (or `flux settings` fallback)
+- Config **Save / Reload** via `save_user_config()` in `config/parser.rs`
+- **Test rules** — dry-run organize from the GUI
+- Folder pickers for watch paths and rule destinations (`rfd`)
+
 ## [0.2.0-alpha.2] - 2026-05-21
 
 ### Added — Phase C (installers)
@@ -58,5 +68,6 @@ Initial release — Phases 1–8:
 - Activity log (JSONL) and status dashboard
 - CI on Linux, macOS, and Windows
 
+[0.2.0]: https://github.com/ManeeshJupalle/FluxFS/releases/tag/v0.2.0
 [0.1.1]: https://github.com/ManeeshJupalle/FluxFS/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ManeeshJupalle/FluxFS/releases/tag/v0.1.0

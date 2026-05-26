@@ -83,9 +83,19 @@ pub fn stop_service() -> Result<()> {
     platform_stop()
 }
 
+/// Resolve the settings GUI binary next to the current executable.
+pub fn settings_binary_path() -> Result<PathBuf> {
+    sibling_binary("fluxfs-settings")
+}
+
 /// Spawn a detached background `flux start --daemon` process (no OS service registered).
 pub fn spawn_detached_daemon(binary: &Path) -> Result<()> {
     spawn_detached(binary, &["start", "--daemon"])
+}
+
+/// Spawn a detached process with custom arguments (e.g. settings GUI).
+pub fn spawn_detached_process(binary: &Path, args: &[&str]) -> Result<()> {
+    spawn_detached(binary, args)
 }
 
 /// Resolve the tray binary next to the current executable.

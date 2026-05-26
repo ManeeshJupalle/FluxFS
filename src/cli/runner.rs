@@ -52,6 +52,7 @@ pub fn run() -> anyhow::Result<()> {
             skip_service,
             quiet,
         } => run_setup(*skip_init, *skip_service, *quiet)?,
+        Commands::Settings => run_settings()?,
         Commands::Find {
             query,
             path,
@@ -602,6 +603,11 @@ fn run_uninstall_service() -> anyhow::Result<()> {
     println!("  Start manually with: flux start");
 
     Ok(())
+}
+
+/// `flux settings` — open the settings GUI.
+fn run_settings() -> anyhow::Result<()> {
+    crate::gui::run_settings_app()
 }
 
 /// `flux stop` — stop the running daemon.

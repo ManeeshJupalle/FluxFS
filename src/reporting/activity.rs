@@ -332,6 +332,62 @@ pub fn print_activity_log(entries: &[ActivityEntry], show_all_hint: bool) {
     }
 }
 
+/// Format one activity entry as a single plain-text line (for GUI / logs).
+pub fn format_entry_plain(entry: &ActivityEntry, home: Option<&Path>) -> String {
+    let ts: DateTime<Local> = entry.timestamp.into();
+    let stamp = ts.format("%b %d %H:%M").to_string();
+
+    let body = match &entry.action {
+        ActivityAction::FileMoved { from, to, .. } => {
+            let name = from
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| from.display().to_string());
+            let dest = shorten_path(to.parent().unwrap_or(to.as_path()), home);
+            format!("Moved {name} → {dest}")
+        }
+        ActivityAction::DuplicateRemoved { path, size } => {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string());
+            format!("Duplicate removed: {name} ({})", format_bytes(*size))
+        }
+        ActivityAction::DuplicateFound {
+            duplicate, size, ..
+        } => {
+            let name = duplicate
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| duplicate.display().to_string());
+            format!("Duplicate found: {name} ({})", format_bytes(*size))
+        }
+        ActivityAction::FileIndexed { path } => {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string());
+            format!("Indexed {name}")
+        }
+        ActivityAction::FileRemoved { path } => {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string());
+            format!("Removed from index: {name}")
+        }
+        ActivityAction::ScanCompleted {
+            file_count,
+            duration_ms,
+        } => {
+            let secs = *duration_ms as f64 / 1000.0;
+            format!("Full scan completed: {file_count} files indexed in {secs:.1}s")
+        }
+    };
+
+    format!("[{stamp}] {body}")
+}
+
 fn format_entry_line(entry: &ActivityEntry, home: Option<&Path>) -> String {
     let ts: DateTime<Local> = entry.timestamp.into();
     let stamp = ts.format("%b %d %H:%M").to_string();

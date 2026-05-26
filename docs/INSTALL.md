@@ -8,6 +8,7 @@ Download installers from [GitHub Releases](https://github.com/ManeeshJupalle/Flu
 2. Run the installer (no admin required — installs to `%LOCALAPPDATA%\Programs\FluxFS`)
 3. The installer runs `flux setup` automatically (scans Downloads, registers auto-start + tray)
 4. Look for the **FluxFS tray icon** in the system tray after install
+5. Open **Settings…** from the tray (or run `flux settings`) to edit watch folders and rules
 
 **Uninstall:** Settings → Apps → FluxFS, or run `%LOCALAPPDATA%\Programs\FluxFS\Uninstall.exe`
 
@@ -85,7 +86,7 @@ chmod +x packaging/macos/build-dmg.sh
 ### Linux
 
 ```bash
-sudo apt-get install libgtk-3-dev libxdo-dev   # tray dependencies
+sudo apt-get install libgtk-3-dev libxdo-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev   # tray + settings GUI
 chmod +x packaging/linux/build-deb.sh
 ./packaging/linux/build-deb.sh
 # Output: dist/fluxfs_*_amd64.deb

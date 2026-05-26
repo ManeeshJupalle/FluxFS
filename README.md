@@ -6,7 +6,7 @@
 
 **Intelligent filesystem autopilot** — watch, organize, deduplicate, and search your files automatically.
 
-**Status:** v0.1.1 on [GitHub](https://github.com/ManeeshJupalle/FluxFS). Install from source today; crates.io publish is ready (`cargo publish --dry-run` passes — run `cargo login` then `cargo publish` to go live). Both **`flux`** and **`fluxfs`** binaries are available after install.
+**Status:** **v0.2.0** on [GitHub](https://github.com/ManeeshJupalle/FluxFS) — background daemon, system tray, installers, and settings GUI. Install from [Releases](https://github.com/ManeeshJupalle/FluxFS/releases) or source; crates.io publish is ready (`cargo publish --dry-run` passes). Binaries: **`flux`**, **`fluxfs`**, **`fluxfs-tray`**, **`fluxfs-settings`**.
 
 **Author:** [Maneesh Jupalle](mailto:maneeshreddy28@gmail.com)
 
@@ -140,7 +140,7 @@ Other defaults:
 - **Index:** skip `.git`, `node_modules`, `.venv`, etc.; symlinks not followed
 - **Search:** up to 20 results per query
 
-Run `flux config` to see your active file, or edit the TOML directly.
+Run `flux config` to see your active file, edit via **`flux settings`**, or edit the TOML directly.
 
 ---
 
@@ -156,20 +156,17 @@ Full desktop onboarding: runs `flux init` then `flux install-service` (auto-star
 
 ### `flux start`
 
-Without `--foreground`, prints v0.1 usage hints and exits (true background daemon is not implemented yet):
+Starts the file watcher daemon in the **background** (default). Logs go to `{data_dir}/flux.log`.
 
-```text
-FluxFS v0.1 runs the watcher in the foreground.
-
-  Start with:  flux start --foreground
-  Stop with:   flux stop
+```bash
+flux start                  # detached background daemon
+flux start --foreground     # run in terminal (Ctrl+C to stop)
+flux start --daemon         # for systemd / LaunchAgent / service managers
 ```
 
-### `flux start --foreground`
+### `flux settings`
 
-Runs the file watcher with 500ms debouncing. Writes `flux.pid` and `flux.started` under the data directory. Press Ctrl+C to stop.
-
-On Unix you can background the process with your shell (e.g. `flux start --foreground &`).
+Opens the **FluxFS Settings** window (`fluxfs-settings`) — edit watch folders, rules, dedup options, and view activity without editing TOML. Also available from the tray menu (**Settings…**).
 
 ### `flux stop`
 
@@ -328,9 +325,11 @@ See **[docs/ROADMAP-v0.2.md](docs/ROADMAP-v0.2.md)** for the full v0.2 plan (bac
 - [x] Windows setup.exe, macOS `.dmg`, Linux `.deb` ([docs/INSTALL.md](docs/INSTALL.md))
 - [x] `flux setup` post-install hook + GitHub Release CI
 
-**Upcoming (Phase D):**
+**v0.2 Phase D — done:**
 
-- [ ] Settings GUI (rule editor without TOML)
+- [x] **`fluxfs-settings`** GUI — watch folders, rules, dedup, activity, status
+- [x] **`flux settings`** + tray **Settings…** menu item
+- [x] Save/reload config without editing TOML; dry-run **Test rules**
 
 ---
 

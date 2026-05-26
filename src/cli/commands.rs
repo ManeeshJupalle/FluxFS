@@ -62,6 +62,8 @@ pub enum Commands {
         #[arg(long)]
         quiet: bool,
     },
+    /// Open the settings window (GUI)
+    Settings,
     /// Fuzzy search indexed files
     Find {
         /// Search query
