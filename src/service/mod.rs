@@ -246,10 +246,12 @@ fn platform_uninstall() -> Result<()> {
 fn platform_start(binary: &Path) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
+        let _ = binary;
         systemd::start()
     }
     #[cfg(target_os = "macos")]
     {
+        let _ = binary;
         launchd::start()
     }
     #[cfg(windows)]
