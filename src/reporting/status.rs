@@ -10,8 +10,10 @@ use crate::reporting::activity::{rule_hits_for_watch, weekly_summary};
 use crate::reporting::format::{
     format_bytes, format_last_scan, format_uptime, home_dir, shorten_path,
 };
+use crate::service::{service_kind_label, service_status};
 use crate::watcher::daemon::{
-    daemon_started_path, is_daemon_running, pid_file_path, read_daemon_started, read_pid_file,
+    daemon_log_path, daemon_started_path, is_daemon_running, pid_file_path, read_daemon_started,
+    read_pid_file,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use colored::Colorize;
@@ -39,7 +41,7 @@ pub fn print_status(
         "────────────────────────────────────".bright_black()
     );
 
-    print_daemon_section(data_dir)?;
+    print_daemon_section(data_dir, home.as_deref())?;
     print_index_section(stats, config.watch.len());
     print_weekly_section(&weekly);
     print_attention_section(index, &dup_report, &watch_paths, config)?;
@@ -48,22 +50,45 @@ pub fn print_status(
     Ok(())
 }
 
-fn print_daemon_section(data_dir: &Path) -> Result<()> {
+fn print_daemon_section(data_dir: &Path, home: Option<&Path>) -> Result<()> {
     let running = is_daemon_running(data_dir)?;
+    let service = service_status(data_dir)?;
 
     if running {
         let pid_path = pid_file_path(data_dir);
         let pid = read_pid_file(&pid_path)?;
         let uptime = daemon_uptime(data_dir).unwrap_or(Duration::ZERO);
+        let paused = crate::ipc::is_paused(data_dir);
+        let state = if paused {
+            "● Running (paused)".yellow().to_string()
+        } else {
+            "● Running".green().to_string()
+        };
         println!(
             "  Daemon:      {} (PID {}, uptime {})",
-            "● Running".green(),
-            pid,
-            format_uptime(uptime)
+            state, pid, format_uptime(uptime)
         );
     } else {
         println!("  Daemon:      {}", "○ Stopped".yellow());
     }
+
+    if service.installed {
+        let label = service
+            .kind
+            .map(service_kind_label)
+            .unwrap_or("registered");
+        println!("  Service:     {} (auto-start enabled)", label.green());
+    } else {
+        println!(
+            "  Service:     {} (run `flux install-service` for auto-start)",
+            "○ Not installed".bright_black()
+        );
+    }
+
+    println!(
+        "  Daemon log:  {}",
+        shorten_path(&daemon_log_path(data_dir), home)
+    );
 
     Ok(())
 }

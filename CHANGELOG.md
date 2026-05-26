@@ -2,6 +2,23 @@
 
 All notable changes to FluxFS are documented here.
 
+## [0.2.0-alpha.1] - 2026-05-21
+
+### Added — Phase A (background agent)
+- `flux install-service` / `flux uninstall-service` (systemd, LaunchAgent, Windows Run key)
+- `flux start` spawns a detached background daemon; `flux start --daemon` for service managers
+- Graceful shutdown via `{data_dir}/flux.stop` and daemon logging at `{data_dir}/flux.log`
+
+### Added — Phase B (system tray)
+- **`fluxfs-tray`** binary — tray icon (green running / yellow paused / red stopped)
+- Menu: Pause/Resume, Run organize, Open data folder, Open log, Quit tray
+- Pause IPC via `{data_dir}/paused` (watcher skips organize while paused)
+- Tray auto-start registered with `flux install-service` on all platforms
+
+### Changed
+- Engine exposed as `fluxfs` library; CLI in `src/cli/runner.rs`
+- [docs/ROADMAP-v0.2.md](docs/ROADMAP-v0.2.md) — full v0.2 plan (Phases A–D)
+
 ## [0.1.1] - 2026-05-21
 
 ### Added

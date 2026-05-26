@@ -51,11 +51,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: cargo build --release
-        run: cargo build --release
+        run: cargo build --release --bins
 
       - name: Report binary sizes
         run: |
-          ls -lh target/release/flux target/release/fluxfs
+          ls -lh target/release/flux target/release/fluxfs target/release/fluxfs-tray
           echo "flux bytes:    $(wc -c < target/release/flux)"
           echo "fluxfs bytes: $(wc -c < target/release/fluxfs)"
 

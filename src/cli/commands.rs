@@ -37,12 +37,19 @@ pub enum Commands {
     Init,
     /// Start the background file watcher daemon
     Start {
-        /// Run the watcher in the foreground (required in v0.1)
+        /// Run the watcher in the foreground (debug / attached terminal)
         #[arg(long)]
         foreground: bool,
+        /// Internal: invoked by OS service managers (systemd, launchd, Run key)
+        #[arg(long, hide = true)]
+        daemon: bool,
     },
     /// Stop the running daemon
     Stop,
+    /// Register FluxFS to start automatically at login (systemd / LaunchAgent / Run key)
+    InstallService,
+    /// Remove automatic startup registration (keeps config and index)
+    UninstallService,
     /// Fuzzy search indexed files
     Find {
         /// Search query

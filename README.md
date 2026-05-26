@@ -294,10 +294,20 @@ time flux find "test"
 
 ## Roadmap
 
-- [ ] TUI dashboard (live status + log tail)  
-- [ ] True background daemon (Windows service / launchd)  
-- [ ] Cloud sync hooks (S3, Google Drive)  
-- [ ] Desktop GUI for rule editing  
+See **[docs/ROADMAP-v0.2.md](docs/ROADMAP-v0.2.md)** for the full v0.2 plan (background agent, tray app, installers, settings GUI).
+
+**v0.2 Phase A — done:**
+
+- [x] `flux install-service` / `flux uninstall-service`
+- [x] Background daemon + graceful shutdown + `flux.log`
+
+**v0.2 Phase B — done:**
+
+- [x] `fluxfs-tray` system tray (pause/resume, organize, open folders)
+- [x] Pause IPC via `{data_dir}/paused`
+- [x] Tray auto-start bundled with service install
+
+**Upcoming (Phase C):**
 
 ---
 

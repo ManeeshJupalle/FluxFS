@@ -21,6 +21,7 @@ pub struct FluxWatcher {
     index: Arc<Mutex<FileIndex>>,
     rulesets: Vec<WatchRuleset>,
     activity_log: PathBuf,
+    data_dir: PathBuf,
     dry_run: bool,
     debounce_ms: u64,
     shutdown: Arc<AtomicBool>,
@@ -32,12 +33,14 @@ impl FluxWatcher {
         index: Arc<Mutex<FileIndex>>,
         rulesets: Vec<WatchRuleset>,
         activity_log: PathBuf,
+        data_dir: PathBuf,
         dry_run: bool,
     ) -> Self {
         Self {
             index,
             rulesets,
             activity_log,
+            data_dir,
             dry_run,
             debounce_ms: DEBOUNCE_MS,
             shutdown: Arc::new(AtomicBool::new(false)),
@@ -207,6 +210,11 @@ impl FluxWatcher {
     }
 
     fn handle_debounced(&self, event: DebouncedEvent) -> Result<()> {
+        if crate::ipc::is_paused(&self.data_dir) {
+            debug!(path = %event.path.display(), "Watcher paused — skipping event");
+            return Ok(());
+        }
+
         let mut index = self
             .index
             .lock()
@@ -271,6 +279,7 @@ mod tests {
             Arc::clone(&index),
             rulesets,
             dir.path().join("activity.jsonl"),
+            dir.path().to_path_buf(),
             false,
         )
         .with_debounce_ms(50);
@@ -299,6 +308,7 @@ mod tests {
             Arc::clone(&index),
             vec![],
             dir.path().join("activity.jsonl"),
+            dir.path().to_path_buf(),
             false,
         )
         .with_debounce_ms(20);
@@ -357,6 +367,7 @@ mod tests {
             Arc::clone(&index),
             rulesets,
             dir.path().join("activity.jsonl"),
+            dir.path().to_path_buf(),
             false,
         )
         .with_debounce_ms(50);
@@ -378,5 +389,45 @@ mod tests {
             || !source.exists() && dest_file.exists(),
             "watcher should move doc.pdf to destination",
         );
+    }
+
+    #[test]
+    fn watcher_skips_organize_when_paused() {
+        let dir = tempdir().expect("tempdir");
+        let watch = dir.path().join("watch");
+        let dest = dir.path().join("pdfs");
+        std::fs::create_dir_all(&watch).expect("mkdir");
+
+        crate::ipc::set_paused(dir.path(), true).expect("pause");
+
+        let index = Arc::new(Mutex::new(FileIndex::new()));
+        let rulesets = vec![WatchRuleset {
+            watch_path: watch.clone(),
+            rules: vec![build_rule(&WatchRule {
+                pattern: "*.pdf".to_string(),
+                destination: dest.to_str().expect("utf8").to_string(),
+            })
+            .expect("rule")],
+        }];
+
+        let flux = FluxWatcher::new(
+            Arc::clone(&index),
+            rulesets,
+            dir.path().join("activity.jsonl"),
+            dir.path().to_path_buf(),
+            false,
+        )
+        .with_debounce_ms(50);
+
+        let (tx, rx) = mpsc::channel();
+        let watcher =
+            FluxWatcher::build_watcher(tx, std::slice::from_ref(&watch)).expect("watcher");
+
+        std::fs::write(watch.join("doc.pdf"), b"%PDF").expect("write");
+        flux.run_for_duration(rx, watcher, Duration::from_millis(1200))
+            .expect("run");
+
+        assert!(watch.join("doc.pdf").exists());
+        assert!(!dest.join("doc.pdf").exists());
     }
 }

@@ -58,7 +58,14 @@ impl FluxError {
                 Some("Stop the existing daemon with `flux stop` before starting again.".into())
             }
             FluxError::Watcher(msg) if msg.contains("not running") => {
-                Some("Start the daemon with `flux start --foreground`.".into())
+                Some("Start the daemon with `flux start` or `flux start --foreground`.".into())
+            }
+            FluxError::Watcher(msg)
+                if msg.contains("service is already installed") || msg.contains("not installed") =>
+            {
+                Some(
+                    "Use `flux install-service` to register auto-start, or `flux uninstall-service` to remove it.".into(),
+                )
             }
             FluxError::Rule(msg) if msg.contains("full") || msg.contains("space") => {
                 Some("Free disk space on the destination volume, then retry the operation.".into())

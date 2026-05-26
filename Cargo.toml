@@ -1,6 +1,6 @@
 [package]
 name = "fluxfs"
-version = "0.1.1"
+version = "0.2.0-alpha.1"
 edition = "2021"
 description = "Intelligent filesystem autopilot — watch, organize, deduplicate, and search your files"
 license = "MIT"
@@ -11,6 +11,10 @@ readme = "README.md"
 keywords = ["filesystem", "cli", "deduplication", "file-organizer", "fuzzy-search"]
 categories = ["command-line-utilities", "filesystem"]
 
+[lib]
+name = "fluxfs"
+path = "src/lib.rs"
+
 [[bin]]
 name = "fluxfs"
 path = "src/main.rs"
@@ -18,6 +22,10 @@ path = "src/main.rs"
 [[bin]]
 name = "flux"
 path = "src/main.rs"
+
+[[bin]]
+name = "fluxfs-tray"
+path = "src/bin/tray.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -39,6 +47,9 @@ colored = "2"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
 tokio = { version = "1", features = ["rt-multi-thread", "signal", "macros", "time", "sync"] }
+tray-icon = "0.19"
+muda = "0.15"
+winit = { version = "0.30", default-features = false, features = ["rwh_05"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }

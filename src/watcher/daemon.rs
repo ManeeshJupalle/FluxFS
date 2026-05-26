@@ -25,6 +25,12 @@ pub const PID_FILENAME: &str = "flux.pid";
 /// Daemon start timestamp file (RFC3339).
 pub const DAEMON_STARTED_FILENAME: &str = "flux.started";
 
+/// Graceful shutdown request file (created by `flux stop`).
+pub const SHUTDOWN_FILENAME: &str = "flux.stop";
+
+/// Daemon log file (background mode).
+pub const DAEMON_LOG_FILENAME: &str = "flux.log";
+
 /// Interval between automatic index saves.
 const INDEX_SAVE_INTERVAL_SECS: u64 = 300;
 
@@ -36,6 +42,38 @@ pub fn pid_file_path(data_dir: &Path) -> PathBuf {
 /// Path to the daemon start-time file.
 pub fn daemon_started_path(data_dir: &Path) -> PathBuf {
     data_dir.join(DAEMON_STARTED_FILENAME)
+}
+
+/// Path to the graceful shutdown request file.
+pub fn shutdown_request_path(data_dir: &Path) -> PathBuf {
+    data_dir.join(SHUTDOWN_FILENAME)
+}
+
+/// Path to the daemon log file.
+pub fn daemon_log_path(data_dir: &Path) -> PathBuf {
+    data_dir.join(DAEMON_LOG_FILENAME)
+}
+
+/// Create a shutdown request file so a running daemon exits gracefully.
+pub fn request_daemon_shutdown(data_dir: &Path) -> Result<()> {
+    fs::create_dir_all(data_dir).map_err(FluxError::from)?;
+    fs::write(shutdown_request_path(data_dir), Utc::now().to_rfc3339())
+        .map_err(FluxError::from)?;
+    Ok(())
+}
+
+/// Remove a shutdown request file if present.
+pub fn clear_shutdown_request(data_dir: &Path) -> Result<()> {
+    let path = shutdown_request_path(data_dir);
+    if path.exists() {
+        fs::remove_file(path).map_err(FluxError::from)?;
+    }
+    Ok(())
+}
+
+/// Returns true when `flux stop` has requested a graceful shutdown.
+pub fn shutdown_requested(data_dir: &Path) -> bool {
+    shutdown_request_path(data_dir).exists()
 }
 
 /// Record when the daemon started (for uptime in `flux status`).
@@ -157,22 +195,39 @@ pub fn stop_daemon(data_dir: &Path) -> Result<()> {
         ));
     }
 
-    terminate_process(pid)?;
+    request_daemon_shutdown(data_dir)?;
 
-    // Give the daemon a moment to shut down gracefully.
-    for _ in 0..20 {
+    // Give the daemon time to save the index and exit cleanly.
+    for _ in 0..50 {
         if !is_process_alive(pid) {
-            break;
+            clear_shutdown_request(data_dir)?;
+            if pid_path.exists() {
+                remove_pid_file(&pid_path)?;
+            }
+            return Ok(());
         }
         std::thread::sleep(Duration::from_millis(100));
     }
 
     if is_process_alive(pid) {
-        return Err(FluxError::Watcher(format!(
-            "Daemon PID {pid} did not stop. Try again or end the process manually."
-        )));
+        warn!(pid, "Graceful shutdown timed out; sending hard terminate");
+        terminate_process(pid)?;
+
+        for _ in 0..20 {
+            if !is_process_alive(pid) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+
+        if is_process_alive(pid) {
+            return Err(FluxError::Watcher(format!(
+                "Daemon PID {pid} did not stop. Try again or end the process manually."
+            )));
+        }
     }
 
+    clear_shutdown_request(data_dir)?;
     if pid_path.exists() {
         remove_pid_file(&pid_path)?;
     }
@@ -235,6 +290,7 @@ pub async fn run_daemon(config: FluxConfig) -> Result<()> {
         ));
     }
 
+    clear_shutdown_request(&data_dir)?;
     write_pid_file(&pid_path)?;
     let started_path = daemon_started_path(&data_dir);
     write_daemon_started(&started_path)?;
@@ -247,7 +303,13 @@ pub async fn run_daemon(config: FluxConfig) -> Result<()> {
     let watch_paths: Vec<PathBuf> = rulesets.iter().map(|r| r.watch_path.clone()).collect();
 
     let (tx, rx) = std::sync::mpsc::channel();
-    let flux = FluxWatcher::new(Arc::clone(&index), rulesets, activity_log.clone(), dry_run);
+    let flux = FluxWatcher::new(
+        Arc::clone(&index),
+        rulesets,
+        activity_log.clone(),
+        data_dir.clone(),
+        dry_run,
+    );
     let shutdown = flux.shutdown_handle();
     let watcher = FluxWatcher::build_watcher(tx, &watch_paths)?;
 
@@ -271,7 +333,20 @@ pub async fn run_daemon(config: FluxConfig) -> Result<()> {
 
     let watcher_task = tokio::task::spawn_blocking(move || flux.run_event_loop(rx, watcher));
 
-    shutdown_signal().await;
+    let data_dir_for_shutdown = data_dir.clone();
+    let shutdown_poll = async move {
+        loop {
+            time::sleep(Duration::from_millis(500)).await;
+            if shutdown_requested(&data_dir_for_shutdown) {
+                break;
+            }
+        }
+    };
+
+    tokio::select! {
+        () = shutdown_signal() => {},
+        () = shutdown_poll => {},
+    }
 
     info!("FluxFS daemon shutting down");
 
@@ -292,6 +367,7 @@ pub async fn run_daemon(config: FluxConfig) -> Result<()> {
 
     remove_pid_file(&pid_path)?;
     remove_daemon_started(&started_path)?;
+    clear_shutdown_request(&data_dir)?;
     info!("FluxFS daemon stopped");
 
     Ok(())
@@ -340,8 +416,12 @@ mod tests {
     }
 
     #[test]
-    fn is_process_alive_current_pid() {
-        assert!(is_process_alive(std::process::id()));
-        assert!(!is_process_alive(0));
+    fn shutdown_request_file_triggers_shutdown_flag() {
+        let dir = tempdir().expect("tempdir");
+        assert!(!shutdown_requested(dir.path()));
+        request_daemon_shutdown(dir.path()).expect("request");
+        assert!(shutdown_requested(dir.path()));
+        clear_shutdown_request(dir.path()).expect("clear");
+        assert!(!shutdown_requested(dir.path()));
     }
 }
