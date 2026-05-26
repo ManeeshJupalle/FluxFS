@@ -51,6 +51,18 @@ $ flux status
 
 ## Installation
 
+See **[docs/INSTALL.md](docs/INSTALL.md)** for one-click installers (Windows `.exe`, macOS `.dmg`, Linux `.deb`).
+
+### From GitHub Releases (recommended for desktop)
+
+Download the installer for your OS from [Releases](https://github.com/ManeeshJupalle/FluxFS/releases), run it, then verify:
+
+```bash
+flux status
+```
+
+Installers run `flux setup` automatically (scan Downloads + register auto-start + tray).
+
 ### From source (recommended until crates.io is live)
 
 ```bash
@@ -137,6 +149,10 @@ Run `flux config` to see your active file, or edit the TOML directly.
 ### `flux init`
 
 Creates config (if missing), data directory, scans all `[[watch]]` paths, hashes files, saves `index.bin`.
+
+### `flux setup`
+
+Full desktop onboarding: runs `flux init` then `flux install-service` (auto-start + tray). Used by installers; supports `--quiet`, `--skip-init`, `--skip-service`.
 
 ### `flux start`
 
@@ -307,7 +323,14 @@ See **[docs/ROADMAP-v0.2.md](docs/ROADMAP-v0.2.md)** for the full v0.2 plan (bac
 - [x] Pause IPC via `{data_dir}/paused`
 - [x] Tray auto-start bundled with service install
 
-**Upcoming (Phase C):**
+**v0.2 Phase C — done:**
+
+- [x] Windows setup.exe, macOS `.dmg`, Linux `.deb` ([docs/INSTALL.md](docs/INSTALL.md))
+- [x] `flux setup` post-install hook + GitHub Release CI
+
+**Upcoming (Phase D):**
+
+- [ ] Settings GUI (rule editor without TOML)
 
 ---
 

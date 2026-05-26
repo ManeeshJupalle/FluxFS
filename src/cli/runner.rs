@@ -45,8 +45,13 @@ pub fn run() -> anyhow::Result<()> {
             daemon,
         } => run_start(*foreground, *daemon)?,
         Commands::Stop => run_stop()?,
-        Commands::InstallService => run_install_service()?,
+        Commands::InstallService => run_install_service(false)?,
         Commands::UninstallService => run_uninstall_service()?,
+        Commands::Setup {
+            skip_init,
+            skip_service,
+            quiet,
+        } => run_setup(*skip_init, *skip_service, *quiet)?,
         Commands::Find {
             query,
             path,
@@ -452,7 +457,7 @@ fn run_start(foreground: bool, daemon: bool) -> anyhow::Result<()> {
 }
 
 /// `flux install-service` — register FluxFS to start at login.
-fn run_install_service() -> anyhow::Result<()> {
+fn run_install_service(quiet: bool) -> anyhow::Result<()> {
     let cfg = load_config()?;
     init_logging(&cfg, LogDestination::Stderr)?;
     log_startup(&cfg)?;
@@ -485,6 +490,10 @@ fn run_install_service() -> anyhow::Result<()> {
         .map(service::service_kind_label)
         .unwrap_or("service");
 
+    if quiet {
+        return Ok(());
+    }
+
     println!("FluxFS service installed and started.");
     println!("  Mode:   {kind}");
     println!("  Logs:   {}", daemon_log_path(&data_dir).display());
@@ -492,6 +501,78 @@ fn run_install_service() -> anyhow::Result<()> {
     println!("  Tray:   fluxfs-tray (system tray icon)");
     println!("  Remove: flux uninstall-service");
 
+    Ok(())
+}
+
+/// `flux setup` — init + install-service (post-install hook for packaged installs).
+fn run_setup(skip_init: bool, skip_service: bool, quiet: bool) -> anyhow::Result<()> {
+    if !skip_init {
+        run_init_inner(quiet)?;
+    } else if !quiet {
+        println!("Skipping init (--skip-init).");
+    }
+
+    if !skip_service {
+        let cfg = load_config()?;
+        if !quiet {
+            init_logging(&cfg, LogDestination::Stderr)?;
+        }
+        let data_dir = ensure_data_dir(&cfg)?;
+
+        if service::is_service_installed(&data_dir) {
+            if !quiet {
+                println!("Service already registered — ensuring daemon is running.");
+            }
+            if !is_daemon_running(&data_dir)? {
+                let binary =
+                    std::env::current_exe().context("Failed to resolve flux binary path")?;
+                service::start_service(&binary)?;
+            }
+        } else {
+            run_install_service(quiet)?;
+        }
+    } else if !quiet {
+        println!("Skipping service install (--skip-service).");
+    }
+
+    if !quiet {
+        println!();
+        println!("FluxFS setup complete.");
+        println!("  Tray:   fluxfs-tray");
+        println!("  Status: flux status");
+    }
+
+    Ok(())
+}
+
+/// `flux init` with optional quiet output for installer hooks.
+fn run_init_inner(quiet: bool) -> anyhow::Result<()> {
+    if quiet {
+        run_init_silent()
+    } else {
+        run_init()
+    }
+}
+
+/// Init without user-facing banners (installer post-install).
+fn run_init_silent() -> anyhow::Result<()> {
+    let config_path = config_file_path()?;
+
+    if !config_path.exists() {
+        save_default_config()?;
+    }
+
+    let cfg = load_config()?;
+    init_logging(&cfg, LogDestination::Stderr)?;
+    let data_dir = ensure_data_dir(&cfg)?;
+    let watch_paths = cfg.watch_paths()?;
+    let (entries, summary) = scan_directories(&watch_paths, &cfg.index)?;
+    let mut index = FileIndex::from_entries(entries, summary.duration_ms);
+    let _ = hash_all(&mut index, &cfg.duplicates)?;
+    let index_path = index_file_path(&cfg)?;
+    save(&index, &index_path)?;
+    let activity_log = activity_log_path(&data_dir);
+    log_scan_completed(&activity_log, index.len(), summary.duration_ms)?;
     Ok(())
 }
 

@@ -50,6 +50,18 @@ pub enum Commands {
     InstallService,
     /// Remove automatic startup registration (keeps config and index)
     UninstallService,
+    /// Full desktop setup: init + install-service (used by installers)
+    Setup {
+        /// Skip filesystem scan / index build
+        #[arg(long)]
+        skip_init: bool,
+        /// Skip login auto-start registration
+        #[arg(long)]
+        skip_service: bool,
+        /// Minimal output for installer scripts
+        #[arg(long)]
+        quiet: bool,
+    },
     /// Fuzzy search indexed files
     Find {
         /// Search query

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=FluxFS Tray
+Comment=FluxFS filesystem autopilot
+Exec=fluxfs-tray
+Icon=utilities-terminal
+Terminal=false
+Type=Application
+Categories=Utility;System;

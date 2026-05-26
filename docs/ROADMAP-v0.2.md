@@ -223,11 +223,13 @@ We work **strictly phase by phase**. Do not start Phase B until Phase A acceptan
 3. ✅ Menu: status icon, open folders, organize, quit
 4. ✅ Wired into `install-service` (tray starts at login)
 
-### Phase C — preview
+### Phase C — done
 
-1. cargo-wix / create-dmg scripts
-2. Release workflow uploads installers
-3. Post-install script
+1. ✅ `flux setup` command + [docs/INSTALL.md](../docs/INSTALL.md)
+2. ✅ Windows NSIS setup.exe (`packaging/windows/`)
+3. ✅ macOS DMG builder (`packaging/macos/build-dmg.sh`)
+4. ✅ Linux `.deb` via cargo-deb + maintainer scripts
+5. ✅ GitHub Release CI (deb, dmg, exe, tarballs)
 
 ### Phase D — preview
 

@@ -1,6 +1,6 @@
 [package]
 name = "fluxfs"
-version = "0.2.0-alpha.1"
+version = "0.2.0-alpha.2"
 edition = "2021"
 description = "Intelligent filesystem autopilot — watch, organize, deduplicate, and search your files"
 license = "MIT"
@@ -58,3 +58,21 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_
 tempfile = "3"
 assert_cmd = "2"
 predicates = "3"
+
+[package.metadata.deb]
+maintainer = "Maneesh Jupalle <maneeshreddy28@gmail.com>"
+copyright = "2026, Maneesh Jupalle"
+license-file = ["LICENSE", "4"]
+extended-description = """\
+FluxFS — intelligent filesystem autopilot. Watch Downloads, auto-organize \
+files, deduplicate by content, and fuzzy-search your filesystem from the CLI."""
+depends = "$auto"
+section = "utility"
+priority = "optional"
+assets = [
+    ["target/release/flux", "usr/bin/", "755"],
+    ["target/release/fluxfs", "usr/bin/", "755"],
+    ["target/release/fluxfs-tray", "usr/bin/", "755"],
+    ["packaging/linux/fluxfs.desktop", "usr/share/applications/", "644"],
+]
+maintainer-scripts = "packaging/linux/debian"

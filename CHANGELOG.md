@@ -2,6 +2,16 @@
 
 All notable changes to FluxFS are documented here.
 
+## [0.2.0-alpha.2] - 2026-05-21
+
+### Added — Phase C (installers)
+- **`flux setup`** — post-install hook (`init` + `install-service`; `--quiet` for installers)
+- **Windows:** NSIS setup.exe (`packaging/windows/installer.nsi`) — PATH, auto-start, uninstall
+- **macOS:** `.dmg` with binaries + `Setup.command` (`packaging/macos/build-dmg.sh`)
+- **Linux:** `.deb` via `cargo-deb` with postinst/prerm hooks + desktop entry
+- [docs/INSTALL.md](docs/INSTALL.md) — platform install guide
+- GitHub Release CI: builds `.deb`, `.dmg`, `.exe`, and portable archives per OS
+
 ## [0.2.0-alpha.1] - 2026-05-21
 
 ### Added — Phase A (background agent)

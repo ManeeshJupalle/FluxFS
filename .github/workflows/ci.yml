@@ -29,6 +29,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install Linux tray dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxdo-dev
+
       - name: cargo fmt
         run: cargo fmt --all -- --check
 
@@ -50,6 +54,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install Linux tray dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxdo-dev
+
       - name: cargo build --release
         run: cargo build --release --bins
 
@@ -58,24 +65,12 @@ jobs:
           ls -lh target/release/flux target/release/fluxfs target/release/fluxfs-tray
           echo "flux bytes:    $(wc -c < target/release/flux)"
           echo "fluxfs bytes: $(wc -c < target/release/fluxfs)"
+          echo "tray bytes:   $(wc -c < target/release/fluxfs-tray)"
 
-  release-artifacts:
-    name: Build release (${{ matrix.os }})
+  release-linux:
+    name: Package Linux (.deb + tarball)
     if: github.event_name == 'release'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            artifact: fluxfs-linux-x86_64
-            bin: flux
-          - os: macos-latest
-            artifact: fluxfs-macos-x86_64
-            bin: flux
-          - os: windows-latest
-            artifact: fluxfs-windows-x86_64
-            bin: flux.exe
-
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -83,11 +78,103 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: cargo build --release
-        run: cargo build --release
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxdo-dev
 
-      - name: Upload release binary
+      - name: Build release binaries
+        run: cargo build --release --bins
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
+
+      - name: Build .deb package
+        run: |
+          chmod +x packaging/linux/debian/postinst packaging/linux/debian/prerm
+          cargo deb --no-build
+          mkdir -p dist
+          cp target/debian/*.deb dist/
+          tar czf dist/fluxfs-linux-x86_64.tar.gz -C target/release flux fluxfs fluxfs-tray
+
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: target/release/${{ matrix.bin }}
+          name: fluxfs-linux-packages
+          path: dist/*
+
+  release-macos:
+    name: Package macOS (.dmg + tarball)
+    if: github.event_name == 'release'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binaries
+        run: cargo build --release --bins
+
+      - name: Build DMG
+        run: |
+          chmod +x packaging/macos/build-dmg.sh
+          ./packaging/macos/build-dmg.sh
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluxfs-macos-packages
+          path: dist/*
+
+  release-windows:
+    name: Package Windows (setup.exe + zip)
+    if: github.event_name == 'release'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binaries
+        run: cargo build --release --bins
+
+      - name: Install NSIS
+        run: choco install nsis -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          & packaging/windows/build-installer.ps1 -SkipBuild
+          Compress-Archive -Path target/release/flux.exe,target/release/fluxfs.exe,target/release/fluxfs-tray.exe -DestinationPath dist/fluxfs-windows-x86_64.zip
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluxfs-windows-packages
+          path: dist/*
+
+  release-publish:
+    name: Publish GitHub Release assets
+    if: github.event_name == 'release'
+    needs: [release-linux, release-macos, release-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List release assets
+        run: find artifacts -type f | sort
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

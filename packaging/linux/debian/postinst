@@ -1,0 +1,16 @@
+#!/bin/bash
+set -e
+
+case "$1" in
+configure)
+    if command -v flux >/dev/null 2>&1; then
+        if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+            su - "$SUDO_USER" -c "flux setup --quiet" || true
+        else
+            echo "FluxFS installed. Run 'flux setup' to scan Downloads and enable auto-start."
+        fi
+    fi
+    ;;
+esac
+
+exit 0
