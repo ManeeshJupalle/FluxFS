@@ -116,7 +116,11 @@ pub fn uninstall() -> Result<()> {
 
 pub fn start() -> Result<()> {
     run_launchctl(&["kickstart", "-k", &service_target()])?;
-    let _ = run_launchctl(&["kickstart", "-k", &format!("{}/{}", gui_domain(), TRAY_LABEL)]);
+    let _ = run_launchctl(&[
+        "kickstart",
+        "-k",
+        &format!("{}/{}", gui_domain(), TRAY_LABEL),
+    ]);
     Ok(())
 }
 
@@ -126,11 +130,7 @@ pub fn stop() -> Result<()> {
 }
 
 fn load_agent(path: &Path) -> Result<()> {
-    run_launchctl(&[
-        "bootstrap",
-        &gui_domain(),
-        &path.display().to_string(),
-    ])
+    run_launchctl(&["bootstrap", &gui_domain(), &path.display().to_string()])
 }
 
 fn unload_agent(path: &Path) -> Result<()> {

@@ -40,10 +40,7 @@ pub fn run() -> anyhow::Result<()> {
         Commands::Config => run_config()?,
         Commands::Dedup { dry_run, confirm } => run_dedup(*dry_run, *confirm)?,
         Commands::Organize { dry_run } => run_organize(*dry_run)?,
-        Commands::Start {
-            foreground,
-            daemon,
-        } => run_start(*foreground, *daemon)?,
+        Commands::Start { foreground, daemon } => run_start(*foreground, *daemon)?,
         Commands::Stop => run_stop()?,
         Commands::InstallService => run_install_service(false)?,
         Commands::UninstallService => run_uninstall_service()?,
@@ -392,10 +389,7 @@ fn run_start(foreground: bool, daemon: bool) -> anyhow::Result<()> {
     let data_dir = ensure_data_dir(&cfg)?;
 
     if daemon {
-        init_logging(
-            &cfg,
-            LogDestination::File(&daemon_log_path(&data_dir)),
-        )?;
+        init_logging(&cfg, LogDestination::File(&daemon_log_path(&data_dir)))?;
         log_startup(&cfg)?;
 
         if is_daemon_running(&data_dir)? {

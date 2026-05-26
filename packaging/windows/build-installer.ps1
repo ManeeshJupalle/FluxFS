@@ -28,5 +28,8 @@ if (-not $Nsis) {
 
 Write-Host "Running NSIS..."
 & $Nsis "packaging\windows\installer.nsi"
+if ($LASTEXITCODE -ne 0) {
+    throw "NSIS failed with exit code $LASTEXITCODE"
+}
 
 Write-Host "Created dist\FluxFS-${Version}-windows-x86_64-setup.exe"

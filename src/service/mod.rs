@@ -4,10 +4,10 @@ use crate::errors::{FluxError, Result};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-#[cfg(target_os = "linux")]
-mod systemd;
 #[cfg(target_os = "macos")]
 mod launchd;
+#[cfg(target_os = "linux")]
+mod systemd;
 #[cfg(windows)]
 mod windows;
 
@@ -121,9 +121,9 @@ pub fn spawn_tray(tray: &Path) -> Result<()> {
 
 fn sibling_binary(name: &str) -> Result<PathBuf> {
     let current = std::env::current_exe().map_err(FluxError::from)?;
-    let parent = current.parent().ok_or_else(|| {
-        FluxError::Watcher("Cannot resolve executable directory.".to_string())
-    })?;
+    let parent = current
+        .parent()
+        .ok_or_else(|| FluxError::Watcher("Cannot resolve executable directory.".to_string()))?;
     let file = if cfg!(windows) {
         format!("{name}.exe")
     } else {

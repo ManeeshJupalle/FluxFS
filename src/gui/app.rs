@@ -8,12 +8,16 @@ use crate::dedup::build_report;
 use crate::errors::FluxError;
 use crate::index::{index_file_path, load};
 use crate::ipc::is_paused;
-use crate::reporting::activity::{activity_log_path, format_entry_plain, read_entries, LogFilter, WeeklySummary};
 use crate::reporting::activity::weekly_summary;
+use crate::reporting::activity::{
+    activity_log_path, format_entry_plain, read_entries, LogFilter, WeeklySummary,
+};
 use crate::reporting::format::{format_bytes, format_last_scan, format_uptime, home_dir};
 use crate::rules::{organize_index, OrganizeSummary};
 use crate::service::{service_kind_label, service_status};
-use crate::watcher::daemon::{daemon_started_path, is_daemon_running, pid_file_path, read_daemon_started, read_pid_file};
+use crate::watcher::daemon::{
+    daemon_started_path, is_daemon_running, pid_file_path, read_daemon_started, read_pid_file,
+};
 use eframe::egui;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -103,7 +107,9 @@ impl SettingsApp {
             Ok(cfg) => {
                 self.config = cfg;
                 self.config_path = config_file_path().unwrap_or_else(|_| self.config_path.clone());
-                self.selected_watch = self.selected_watch.min(self.config.watch.len().saturating_sub(1));
+                self.selected_watch = self
+                    .selected_watch
+                    .min(self.config.watch.len().saturating_sub(1));
                 self.status_message = "Reloaded config from disk.".to_string();
                 self.refresh_dashboard();
             }
@@ -157,7 +163,12 @@ impl SettingsApp {
         let Some(folder) = rfd::FileDialog::new().pick_folder() else {
             return;
         };
-        if let Some(rule) = self.config.watch.get_mut(watch_idx).and_then(|w| w.rules.get_mut(rule_idx)) {
+        if let Some(rule) = self
+            .config
+            .watch
+            .get_mut(watch_idx)
+            .and_then(|w| w.rules.get_mut(rule_idx))
+        {
             rule.destination = format!("{}/", path_to_config_string(&folder).trim_end_matches('/'));
         }
     }
@@ -199,20 +210,21 @@ impl eframe::App for SettingsApp {
             });
         });
 
-        egui::SidePanel::left("tabs").resizable(false).default_width(140.0).show(ctx, |ui| {
-            ui.selectable_value(&mut self.tab, Tab::Status, "📊 Status");
-            ui.selectable_value(&mut self.tab, Tab::WatchRules, "📁 Watch & rules");
-            ui.selectable_value(&mut self.tab, Tab::Dedup, "🔍 Dedup");
-            ui.selectable_value(&mut self.tab, Tab::Activity, "📜 Activity");
-        });
+        egui::SidePanel::left("tabs")
+            .resizable(false)
+            .default_width(140.0)
+            .show(ctx, |ui| {
+                ui.selectable_value(&mut self.tab, Tab::Status, "📊 Status");
+                ui.selectable_value(&mut self.tab, Tab::WatchRules, "📁 Watch & rules");
+                ui.selectable_value(&mut self.tab, Tab::Dedup, "🔍 Dedup");
+                ui.selectable_value(&mut self.tab, Tab::Activity, "📜 Activity");
+            });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            match self.tab {
-                Tab::Status => self.show_status(ui),
-                Tab::WatchRules => self.show_watch_rules(ui),
-                Tab::Dedup => self.show_dedup(ui),
-                Tab::Activity => self.show_activity(ui),
-            }
+        egui::CentralPanel::default().show(ctx, |ui| match self.tab {
+            Tab::Status => self.show_status(ui),
+            Tab::WatchRules => self.show_watch_rules(ui),
+            Tab::Dedup => self.show_dedup(ui),
+            Tab::Activity => self.show_activity(ui),
         });
     }
 }
@@ -225,46 +237,59 @@ impl SettingsApp {
             return;
         };
 
-        egui::Grid::new("status_grid").num_columns(2).spacing([16.0, 8.0]).show(ui, |ui| {
-            ui.label("Daemon:");
-            if status.daemon_running {
-                let paused = if status.daemon_paused { " (paused)" } else { "" };
-                ui.colored_label(
-                    egui::Color32::from_rgb(60, 160, 90),
-                    format!("Running{paused}"),
-                );
-            } else {
-                ui.colored_label(egui::Color32::from_rgb(220, 70, 70), "Stopped");
-            }
-            ui.end_row();
-
-            if let Some(pid) = status.pid {
-                ui.label("PID / uptime:");
-                ui.label(format!("{pid} — {}", status.uptime));
+        egui::Grid::new("status_grid")
+            .num_columns(2)
+            .spacing([16.0, 8.0])
+            .show(ui, |ui| {
+                ui.label("Daemon:");
+                if status.daemon_running {
+                    let paused = if status.daemon_paused {
+                        " (paused)"
+                    } else {
+                        ""
+                    };
+                    ui.colored_label(
+                        egui::Color32::from_rgb(60, 160, 90),
+                        format!("Running{paused}"),
+                    );
+                } else {
+                    ui.colored_label(egui::Color32::from_rgb(220, 70, 70), "Stopped");
+                }
                 ui.end_row();
-            }
 
-            ui.label("Auto-start:");
-            ui.label(&status.service_label);
-            ui.end_row();
+                if let Some(pid) = status.pid {
+                    ui.label("PID / uptime:");
+                    ui.label(format!("{pid} — {}", status.uptime));
+                    ui.end_row();
+                }
 
-            ui.label("Indexed files:");
-            ui.label(format!("{} ({})", status.file_count, status.total_size));
-            ui.end_row();
+                ui.label("Auto-start:");
+                ui.label(&status.service_label);
+                ui.end_row();
 
-            ui.label("Last scan:");
-            ui.label(&status.last_scan);
-            ui.end_row();
+                ui.label("Indexed files:");
+                ui.label(format!("{} ({})", status.file_count, status.total_size));
+                ui.end_row();
 
-            ui.label("Duplicate groups:");
-            ui.label(status.duplicate_groups.to_string());
-            ui.end_row();
-        });
+                ui.label("Last scan:");
+                ui.label(&status.last_scan);
+                ui.end_row();
+
+                ui.label("Duplicate groups:");
+                ui.label(status.duplicate_groups.to_string());
+                ui.end_row();
+            });
 
         ui.add_space(12.0);
         ui.heading("This week");
-        ui.label(format!("Files organized: {}", status.weekly.files_organized));
-        ui.label(format!("Duplicates caught: {}", status.weekly.duplicates_caught));
+        ui.label(format!(
+            "Files organized: {}",
+            status.weekly.files_organized
+        ));
+        ui.label(format!(
+            "Duplicates caught: {}",
+            status.weekly.duplicates_caught
+        ));
         ui.label(format!(
             "Space saved: {}",
             format_bytes(status.weekly.space_saved)
@@ -309,26 +334,29 @@ impl SettingsApp {
         let mut remove_rule: Option<usize> = None;
         let mut pick_dest_rule: Option<usize> = None;
         if let Some(watch) = self.config.watch.get_mut(watch_idx) {
-            egui::Grid::new("rules_grid").num_columns(3).spacing([8.0, 6.0]).show(ui, |ui| {
-                ui.label("Pattern");
-                ui.label("Destination");
-                ui.label("");
-                ui.end_row();
-
-                for (rule_idx, rule) in watch.rules.iter_mut().enumerate() {
-                    ui.text_edit_singleline(&mut rule.pattern);
-                    ui.horizontal(|ui| {
-                        ui.text_edit_singleline(&mut rule.destination);
-                        if ui.small_button("📂").clicked() {
-                            pick_dest_rule = Some(rule_idx);
-                        }
-                    });
-                    if ui.button("✕").clicked() {
-                        remove_rule = Some(rule_idx);
-                    }
+            egui::Grid::new("rules_grid")
+                .num_columns(3)
+                .spacing([8.0, 6.0])
+                .show(ui, |ui| {
+                    ui.label("Pattern");
+                    ui.label("Destination");
+                    ui.label("");
                     ui.end_row();
-                }
-            });
+
+                    for (rule_idx, rule) in watch.rules.iter_mut().enumerate() {
+                        ui.text_edit_singleline(&mut rule.pattern);
+                        ui.horizontal(|ui| {
+                            ui.text_edit_singleline(&mut rule.destination);
+                            if ui.small_button("📂").clicked() {
+                                pick_dest_rule = Some(rule_idx);
+                            }
+                        });
+                        if ui.button("✕").clicked() {
+                            remove_rule = Some(rule_idx);
+                        }
+                        ui.end_row();
+                    }
+                });
 
             if ui.button("+ Add rule").clicked() {
                 watch.rules.push(WatchRule {
@@ -349,29 +377,47 @@ impl SettingsApp {
 
     fn show_dedup(&mut self, ui: &mut egui::Ui) {
         ui.heading("Duplicate handling");
-        egui::Grid::new("dedup_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-            ui.label("Strategy:");
-            egui::ComboBox::from_id_salt("dedup_strategy")
-                .selected_text(&self.config.duplicates.strategy)
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.config.duplicates.strategy, "report".to_string(), "report");
-                    ui.selectable_value(&mut self.config.duplicates.strategy, "trash".to_string(), "trash");
-                    ui.selectable_value(&mut self.config.duplicates.strategy, "delete".to_string(), "delete");
-                });
-            ui.end_row();
+        egui::Grid::new("dedup_grid")
+            .num_columns(2)
+            .spacing([12.0, 8.0])
+            .show(ui, |ui| {
+                ui.label("Strategy:");
+                egui::ComboBox::from_id_salt("dedup_strategy")
+                    .selected_text(&self.config.duplicates.strategy)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut self.config.duplicates.strategy,
+                            "report".to_string(),
+                            "report",
+                        );
+                        ui.selectable_value(
+                            &mut self.config.duplicates.strategy,
+                            "trash".to_string(),
+                            "trash",
+                        );
+                        ui.selectable_value(
+                            &mut self.config.duplicates.strategy,
+                            "delete".to_string(),
+                            "delete",
+                        );
+                    });
+                ui.end_row();
 
-            ui.label("Min size:");
-            ui.text_edit_singleline(&mut self.config.duplicates.min_size);
-            ui.end_row();
+                ui.label("Min size:");
+                ui.text_edit_singleline(&mut self.config.duplicates.min_size);
+                ui.end_row();
 
-            ui.label("Max hash size:");
-            ui.text_edit_singleline(&mut self.config.duplicates.max_hash_size);
-            ui.end_row();
+                ui.label("Max hash size:");
+                ui.text_edit_singleline(&mut self.config.duplicates.max_hash_size);
+                ui.end_row();
 
-            ui.label("Global dry-run:");
-            ui.checkbox(&mut self.config.general.dry_run, "Preview moves without changing files");
-            ui.end_row();
-        });
+                ui.label("Global dry-run:");
+                ui.checkbox(
+                    &mut self.config.general.dry_run,
+                    "Preview moves without changing files",
+                );
+                ui.end_row();
+            });
     }
 
     fn show_activity(&self, ui: &mut egui::Ui) {

@@ -66,17 +66,16 @@ fn print_daemon_section(data_dir: &Path, home: Option<&Path>) -> Result<()> {
         };
         println!(
             "  Daemon:      {} (PID {}, uptime {})",
-            state, pid, format_uptime(uptime)
+            state,
+            pid,
+            format_uptime(uptime)
         );
     } else {
         println!("  Daemon:      {}", "○ Stopped".yellow());
     }
 
     if service.installed {
-        let label = service
-            .kind
-            .map(service_kind_label)
-            .unwrap_or("registered");
+        let label = service.kind.map(service_kind_label).unwrap_or("registered");
         println!("  Service:     {} (auto-start enabled)", label.green());
     } else {
         println!(

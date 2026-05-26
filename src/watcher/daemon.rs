@@ -57,8 +57,7 @@ pub fn daemon_log_path(data_dir: &Path) -> PathBuf {
 /// Create a shutdown request file so a running daemon exits gracefully.
 pub fn request_daemon_shutdown(data_dir: &Path) -> Result<()> {
     fs::create_dir_all(data_dir).map_err(FluxError::from)?;
-    fs::write(shutdown_request_path(data_dir), Utc::now().to_rfc3339())
-        .map_err(FluxError::from)?;
+    fs::write(shutdown_request_path(data_dir), Utc::now().to_rfc3339()).map_err(FluxError::from)?;
     Ok(())
 }
 

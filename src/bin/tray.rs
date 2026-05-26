@@ -154,10 +154,9 @@ fn icon_for_state(data_dir: &Path) -> anyhow::Result<Icon> {
 
 fn colored_icon(r: u8, g: u8, b: u8) -> anyhow::Result<Icon> {
     let size = 16u32;
-    let rgba: Vec<u8> = (0..size * size)
-        .flat_map(|_| [r, g, b, 255])
-        .collect();
-    Icon::from_rgba(rgba, size, size).map_err(|err| anyhow::anyhow!("Failed to build tray icon: {err}"))
+    let rgba: Vec<u8> = (0..size * size).flat_map(|_| [r, g, b, 255]).collect();
+    Icon::from_rgba(rgba, size, size)
+        .map_err(|err| anyhow::anyhow!("Failed to build tray icon: {err}"))
 }
 
 fn open_path(path: &Path) -> anyhow::Result<()> {
