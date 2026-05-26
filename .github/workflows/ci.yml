@@ -179,3 +179,11 @@ jobs:
           files: artifacts/**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepend download links to release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          chmod +x packaging/github/prepend-download-links.sh
+          packaging/github/prepend-download-links.sh "${{ github.event.release.tag_name }}"
