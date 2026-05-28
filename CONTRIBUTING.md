@@ -6,15 +6,28 @@ Thanks for your interest in FluxFS! This project is maintained by [Maneesh Jupal
 
 1. Install [Rust](https://rustup.rs/) (stable toolchain).
 2. Clone the repository and enter the directory.
-3. On Windows, ensure MSVC Build Tools are installed for linking.
+3. On **Windows**, ensure MSVC Build Tools are installed for linking.
+4. On **Linux**, install GUI dependencies for `fluxfs-tray` and `fluxfs-settings`:
+
+```bash
+sudo apt-get install libgtk-3-dev libxdo-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
+```
 
 ```bash
 git clone https://github.com/ManeeshJupalle/FluxFS.git
 cd FluxFS
-cargo build
+cargo build --bins
 ```
 
-Both `flux` and `fluxfs` binaries are built from the same entry point.
+### Binaries
+
+| Binary | Source | Purpose |
+|--------|--------|---------|
+| `flux` / `fluxfs` | `src/main.rs` | CLI (same code, two names) |
+| `fluxfs-tray` | `src/bin/tray.rs` | System tray |
+| `fluxfs-settings` | `src/bin/settings.rs` | Settings GUI |
+
+Build all four: `cargo build --release --bins`
 
 ## Before opening a PR
 
@@ -39,16 +52,29 @@ Integration tests use isolated temp directories via the `FLUXFS_CONFIG` environm
 
 ## Tests
 
-- **Unit tests** live alongside modules (`#[cfg(test)]`).
-- **Integration tests** live in `tests/integration.rs` and exercise the full CLI.
+- **Unit tests** live alongside modules (`#[cfg(test)]`) — 88 tests across the crate.
+- **Integration tests** live in `tests/integration.rs` — 14 end-to-end CLI scenarios.
 
 When fixing a bug, add a regression test if feasible.
+
+## Packaging (maintainers)
+
+Release builds and installers are documented in [docs/INSTALL.md](docs/INSTALL.md#build-installers-from-source):
+
+- Windows: `packaging/windows/build-installer.ps1` (requires NSIS)
+- macOS: `packaging/macos/build-dmg.sh`
+- Linux: `packaging/linux/build-deb.sh`
+
+GitHub Releases are built by CI on tag publish; see `.github/workflows/ci.yml` and `packaging/github/prepend-download-links.sh`.
+
+Architecture overview: [fluxfs-architecture.md](fluxfs-architecture.md) (Phase 9 = desktop layer).
 
 ## Reporting issues
 
 Include:
 
 - OS and Rust version (`rustc --version`)
+- Install method (installer, source, crates.io)
 - Config (redact personal paths if needed)
 - Steps to reproduce
 - Expected vs actual behavior

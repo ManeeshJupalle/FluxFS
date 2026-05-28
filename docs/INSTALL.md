@@ -94,7 +94,11 @@ chmod +x packaging/linux/build-deb.sh
 
 ---
 
-## Portable / developer install
+## See also
+
+- [fluxfs-architecture.md](../fluxfs-architecture.md) — engine + desktop architecture (Phase 9)
+- [README.md](../README.md) — command reference and quick start
+- [CHANGELOG.md](../CHANGELOG.md) — release history
 
 ```bash
 git clone https://github.com/ManeeshJupalle/FluxFS.git

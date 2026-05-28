@@ -14,38 +14,45 @@
 
 ## Demo
 
-> **GIF placeholder:** Record a short terminal demo (init → organize → find → status) and add it here, e.g. `docs/demo.gif`.
+> **GIF placeholder:** Record a short demo (installer → tray icon → settings GUI → `flux status`) and add it here, e.g. `docs/demo.gif`.
 
 ```text
-$ flux init
+$ flux setup
 FluxFS initialized.
-  Files:       142,847
-  Duration:    3.20s
+  Service registered (auto-start + tray)
+
+$ flux status
+  ⚡ FluxFS Status
+  Daemon:      ● Running (uptime 3h 22m)
+  Service:     ● Registered (Windows Run key)
+  Index:       142,847 files (48.3 GB)
 
 $ flux find "assignment"
   ~/School/CS341_Assignment3.pdf   4.2 MB   May 15
   4 results (searched 142,847 files in 12ms)
-
-$ flux status
-  ⚡ FluxFS Status
-  Daemon:      ● Running (PID 42891, uptime 3h 22m)
-  Index:       142,847 files (48.3 GB)
 ```
+
+Open **Settings…** from the tray (or `flux settings`) to edit watch folders and rules without TOML.
 
 ---
 
 ## Features
 
-| Feature | Command | Description |
-|---------|---------|-------------|
-| **Setup** | `flux init` | Scan watch paths, hash content, build `index.bin` |
-| **Daemon** | `flux start` / `flux start --foreground` / `flux stop` | Watch folders and auto-organize new files |
+| Feature | Command / app | Description |
+|---------|---------------|-------------|
+| **Desktop setup** | `flux setup` | Scan watch paths, build index, register auto-start + tray |
+| **Installers** | [Releases](https://github.com/ManeeshJupalle/FluxFS/releases) | Windows `.exe`, macOS `.dmg`, Linux `.deb` — no Rust required |
+| **Background agent** | `flux start` / `flux stop` | Detached daemon; logs to `{data_dir}/flux.log` |
+| **Auto-start** | `flux install-service` | systemd / LaunchAgent / Windows Run key at login |
+| **System tray** | `fluxfs-tray` | Pause/resume, organize, open folders, launch settings |
+| **Settings GUI** | `flux settings` | Watch folders, rules, dedup, activity — no TOML required |
+| **Setup / scan** | `flux init` | Scan watch paths, hash content, build `index.bin` |
 | **Search** | `flux find` | Fuzzy search (nucleo-matcher), glob, filters |
 | **Organize** | `flux organize` | Run rules once without the daemon |
 | **Dedup** | `flux dedup` | Find duplicates by SHA-256; trash/delete/report |
-| **Status** | `flux status` | Dashboard: daemon, index, weekly stats, alerts |
+| **Status** | `flux status` | Dashboard: daemon, service, index, weekly stats |
 | **Activity** | `flux log` | JSONL audit trail of moves and scans |
-| **Config** | `flux config` | Show active TOML config |
+| **Config** | `flux config` / settings GUI | Show or edit TOML config |
 
 ---
 
@@ -86,7 +93,9 @@ Once published:
 cargo install fluxfs
 ```
 
-Installs **`flux`** and **`fluxfs`** (same CLI). After the first publish, swap the crates.io badge in this README for:
+Installs **`flux`**, **`fluxfs`**, **`fluxfs-tray`**, and **`fluxfs-settings`**. Tray and settings require a display server (not headless servers).
+
+After the first publish, swap the crates.io badge in this README for:
 
 `[![crates.io](https://img.shields.io/crates/v/fluxfs.svg)](https://crates.io/crates/fluxfs)`
 
@@ -94,23 +103,33 @@ Installs **`flux`** and **`fluxfs`** (same CLI). After the first publish, swap t
 
 ## Quick start
 
+### Desktop (recommended)
+
+1. Download the installer for your OS from [Releases](https://github.com/ManeeshJupalle/FluxFS/releases) — see [docs/INSTALL.md](docs/INSTALL.md).
+2. Windows runs `flux setup` automatically; on macOS/Linux run `flux setup` after install.
+3. Look for the **FluxFS tray icon**. Open **Settings…** to adjust watch folders and rules.
+
+### From source or CLI
+
 ```bash
-# 1. First-time setup (creates config + scans Downloads)
+# Full desktop onboarding (init + auto-start + tray)
+flux setup
+
+# Or step by step:
 flux init
+flux install-service    # register auto-start + tray
+flux start              # start daemon now (if not already running)
 
-# 2. Review or edit config
-flux config
-# Windows: %APPDATA%\fluxfs\config.toml
-# macOS/Linux: ~/.config/fluxfs/config.toml
-
-# 3. Start the watcher (foreground in v0.1)
-flux start --foreground
-
-# 4. Search, status, and logs
+# Search, status, logs
 flux find "invoice"
 flux status
 flux log -n 20
+flux settings           # open settings GUI
 ```
+
+Config paths: Windows `%APPDATA%\fluxfs\config.toml` · macOS/Linux `~/.config/fluxfs/config.toml`
+
+**Debug mode:** `flux start --foreground` runs the watcher in the terminal (Ctrl+C to stop).
 
 Any command that loads config (`init`, `start`, `find`, etc.) **auto-creates** `config.toml` with sensible defaults if it is missing.
 
@@ -167,6 +186,15 @@ flux start --daemon         # for systemd / LaunchAgent / service managers
 ### `flux settings`
 
 Opens the **FluxFS Settings** window (`fluxfs-settings`) — edit watch folders, rules, dedup options, and view activity without editing TOML. Also available from the tray menu (**Settings…**).
+
+### `flux install-service` / `flux uninstall-service`
+
+Register or remove auto-start at login (systemd user unit on Linux, LaunchAgent on macOS, Run key on Windows). Also starts the tray app. Config and index are kept on uninstall.
+
+```bash
+flux install-service
+flux uninstall-service
+```
 
 ### `flux stop`
 
@@ -243,9 +271,15 @@ Example rule patterns:
 ## How it works
 
 ```text
+┌──────────────────────────────────────────────────────────────┐
+│  Desktop (v0.2)                                              │
+│  fluxfs-tray · fluxfs-settings · flux install-service        │
+└────────────────────────────┬─────────────────────────────────┘
+                             │ file IPC (paused, flux.stop)
+                             ▼
 ┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
-│ walkdir     │────▶│ FileIndex    │────▶│ index.bin       │
-│ scanner     │     │ (in-memory)  │     │ (bincode)       │
+│ notify      │────▶│ FileIndex    │────▶│ index.bin       │
+│ watcher     │     │ (in-memory)  │     │ (bincode)       │
 └─────────────┘     └──────┬───────┘     └─────────────────┘
                            │
          ┌─────────────────┼─────────────────┐
@@ -256,15 +290,18 @@ Example rule patterns:
    └──────────┘     └────────────┘    └─────────────┘
          │
          ▼
-   activity.jsonl (append-only audit log)
+   activity.jsonl · flux.log (daemon)
 ```
 
 1. **Scan** — `walkdir` + `rayon` collect metadata; symlinks skipped by default.  
 2. **Index** — `HashMap<PathBuf, FileEntry>` persisted as bincode.  
-3. **Watch** — `notify` events debounced 500ms; first matching rule wins.  
+3. **Watch** — `notify` events debounced 500ms; first matching rule wins; skipped when `{data_dir}/paused` exists.  
 4. **Hash** — Parallel SHA-256 for dedup; files outside min/max size skipped.  
 5. **Search** — `nucleo-matcher` ranks results in milliseconds on large indexes.  
-6. **Moves** — Cross-volume moves use copy-then-delete when rename is not possible (common on Windows).
+6. **Moves** — Cross-volume moves use copy-then-delete when rename is not possible (common on Windows).  
+7. **Desktop** — Agent runs at login; tray controls pause/organize; settings GUI edits config via `save_user_config()`.
+
+Full architecture: [fluxfs-architecture.md](fluxfs-architecture.md) (Phases 1–8 engine + Phase 9 desktop).
 
 Data locations (under `data_dir`, default `~/.local/share/fluxfs`):
 
@@ -274,6 +311,10 @@ Data locations (under `data_dir`, default `~/.local/share/fluxfs`):
 | `index.bin` | Serialized file index |
 | `activity.jsonl` | Action log (rotates at 10 MB) |
 | `flux.pid` / `flux.started` | Daemon process metadata |
+| `flux.log` | Daemon log (background / `--daemon` mode) |
+| `flux.stop` | Graceful shutdown request (created by `flux stop`) |
+| `paused` | When present, watcher skips organize (tray pause) |
+| `service.installed` | OS auto-start registration marker |
 | `trash/` | Duplicates moved here when `strategy = "trash"` |
 
 Config file paths:
@@ -307,29 +348,33 @@ time flux find "test"
 
 ## Roadmap
 
-See **[docs/ROADMAP-v0.2.md](docs/ROADMAP-v0.2.md)** for the full v0.2 plan (background agent, tray app, installers, settings GUI).
+**v0.2.0 is complete** — background agent, tray, installers, and settings GUI. See **[docs/ROADMAP-v0.2.md](docs/ROADMAP-v0.2.md)** for the full plan and **[fluxfs-architecture.md](fluxfs-architecture.md)** for Phase 9 desktop architecture.
 
-**v0.2 Phase A — done:**
+**Shipped in v0.2.0:**
+
+**Phase A — background agent:**
 
 - [x] `flux install-service` / `flux uninstall-service`
 - [x] Background daemon + graceful shutdown + `flux.log`
 
-**v0.2 Phase B — done:**
+**Phase B — system tray:**
 
 - [x] `fluxfs-tray` system tray (pause/resume, organize, open folders)
 - [x] Pause IPC via `{data_dir}/paused`
 - [x] Tray auto-start bundled with service install
 
-**v0.2 Phase C — done:**
+**Phase C — installers:**
 
 - [x] Windows setup.exe, macOS `.dmg`, Linux `.deb` ([docs/INSTALL.md](docs/INSTALL.md))
 - [x] `flux setup` post-install hook + GitHub Release CI
 
-**v0.2 Phase D — done:**
+**Phase D — settings GUI:**
 
 - [x] **`fluxfs-settings`** GUI — watch folders, rules, dedup, activity, status
 - [x] **`flux settings`** + tray **Settings…** menu item
 - [x] Save/reload config without editing TOML; dry-run **Test rules**
+
+**Future (post v0.2):** code signing / notarization, auto-update, service integration tests in CI.
 
 ---
 
@@ -338,12 +383,19 @@ See **[docs/ROADMAP-v0.2.md](docs/ROADMAP-v0.2.md)** for the full v0.2 plan (bac
 CI runs on **Linux, macOS, and Windows** (fmt, clippy, tests).
 
 ```bash
-cargo test --all-targets --bin flux
-cargo clippy --all-targets --bin flux -- -D warnings
+cargo build --release --bins
+cargo test --all-targets
+cargo clippy --all-targets -- -D warnings
 cargo fmt --all
 ```
 
-Includes **14 integration tests** in `tests/integration.rs` (init, organize, dedup, find, status, log, watcher E2E, trash dedup, config, stop error, corrupt index recovery, dry-run regressions) plus unit tests across the crate.
+On **Linux**, install GUI dependencies before building tray/settings:
+
+```bash
+sudo apt-get install libgtk-3-dev libxdo-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
+```
+
+Includes **14 integration tests** in `tests/integration.rs` (init, organize, dedup, find, status, log, watcher E2E, trash dedup, config, stop error, corrupt index recovery, dry-run regressions) plus **88 unit tests** across the crate.
 
 Integration tests run the CLI in isolated temp dirs via `FLUXFS_CONFIG`.
 

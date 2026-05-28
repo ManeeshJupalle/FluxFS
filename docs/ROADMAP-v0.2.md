@@ -1,14 +1,16 @@
 # FluxFS v0.2 Roadmap — From CLI to Desktop Software
 
-**Goal:** Transform FluxFS from a developer CLI into installable background software that runs at login, organizes downloads automatically, and is manageable without a terminal.
+**Status:** **v0.2.0 shipped** (2026-05-21) — [GitHub Release](https://github.com/ManeeshJupalle/FluxFS/releases/tag/v0.2.0)
 
-**Current baseline:** v0.1.1 — full CLI (init, find, dedup, organize, status, log), foreground watcher, 14 integration tests, CI on Linux/macOS/Windows.
+**Goal (achieved):** Transform FluxFS from a developer CLI into installable background software that runs at login, organizes downloads automatically, and is manageable without a terminal.
 
-**Target:** v0.2.0 — background agent + tray app + installers + settings GUI.
+**Baseline (v0.1.x):** CLI-only — init, find, dedup, organize, status, log, foreground watcher, 14 integration tests, CI on Linux/macOS/Windows.
+
+**v0.2.0 deliverables:** Background agent + OS auto-start + system tray + installers + settings GUI.
 
 ---
 
-## Architecture (target state)
+## Architecture (v0.2 — implemented)
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -41,7 +43,10 @@ Shared data (unchanged):
 | `config.toml` | Rules, watch paths, dedup strategy |
 | `{data_dir}/index.bin` | File index |
 | `{data_dir}/activity.jsonl` | Audit log |
-| `{data_dir}/flux.log` | Daemon log (Phase A) |
+| `{data_dir}/flux.log` | Daemon log |
+| `{data_dir}/paused` | Tray pause flag (Phase B) |
+| `{data_dir}/flux.stop` | Graceful shutdown request |
+| `{data_dir}/service.installed` | OS integration marker |
 | `{data_dir}/trash/` | Dedup trash |
 
 ---
@@ -108,15 +113,16 @@ flux status               # includes service state
 | B5 | Launch at login | Tray starts with session (bundled with service install) |
 | B6 | Cross-platform tray | `tray-icon` + `winit` or **Tauri** system tray |
 
-### Tech recommendation
+### Tech (implemented)
 
-| Option | Pros | Cons |
-|--------|------|------|
-| **Tauri 2** (recommended) | Tray + future GUI reuse, small binary | WebView dependency |
-| `tray-icon` + `winit` | Minimal, Rust-native | More manual UI later |
-| egui + tray | Single Rust stack | Less polished native feel |
+**`tray-icon` + `winit`** for the tray (`src/bin/tray.rs`). **eframe + egui** for settings (`src/gui/`). File-based IPC via `{data_dir}/paused` — no Tauri/WebView stack.
 
-**Recommended:** Tauri 2 tray-only app in `crates/fluxfs-tray/` that talks to the engine via IPC.
+### Original options considered
+
+| Option | Notes |
+|--------|-------|
+| Tauri 2 | Deferred — egui chosen for smaller deps and in-crate layout |
+| egui + tray | **Chosen** — single Rust stack |
 
 ### Out of scope for Phase B
 
@@ -204,11 +210,11 @@ Extend `.github/workflows/ci.yml` release job:
 
 ---
 
-## Implementation order (this repo)
+## Implementation status (v0.2.0)
 
-We work **strictly phase by phase**. Do not start Phase B until Phase A acceptance tests pass on all three OSes.
+All phases A–D complete. See [fluxfs-architecture.md](../fluxfs-architecture.md#phase-9-desktop-application-v02) for technical detail.
 
-### Phase A — task breakdown (current sprint)
+### Phase A — done
 
 1. ✅ Roadmap document (this file)
 2. ✅ Graceful shutdown via shutdown request file (Windows + Unix)
@@ -218,9 +224,9 @@ We work **strictly phase by phase**. Do not start Phase B until Phase A acceptan
 6. ✅ `src/service/` — systemd, launchd, Windows registry
 7. ✅ `flux install-service` / `flux uninstall-service`
 8. ✅ `flux status` service section
-9. ⬜ Cross-platform service integration tests in CI (manual smoke on each OS)
+9. ⬜ Cross-platform service integration tests in CI (manual smoke on each OS — optional follow-up)
 
-### Phase B — preview (done)
+### Phase B — done
 
 1. ✅ `fluxfs-tray` binary with tray-icon + winit
 2. ✅ IPC: pause/resume flag in `{data_dir}/paused`
@@ -259,14 +265,18 @@ We work **strictly phase by phase**. Do not start Phase B until Phase A acceptan
 
 ## Success criteria (v0.2.0 GA)
 
-1. User installs via installer (no Rust required)
-2. FluxFS starts at login and runs in background
-3. New Downloads files are organized within seconds
-4. Tray shows running state; pause/resume works
-5. Settings GUI edits rules without TOML
-6. CLI remains fully functional for power users
-7. All existing integration tests pass; new service tests added
-8. CI green on Linux, macOS, Windows
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | User installs via installer (no Rust required) | ✅ |
+| 2 | FluxFS starts at login and runs in background | ✅ |
+| 3 | New Downloads files are organized within seconds | ✅ |
+| 4 | Tray shows running state; pause/resume works | ✅ |
+| 5 | Settings GUI edits rules without TOML | ✅ |
+| 6 | CLI remains fully functional for power users | ✅ |
+| 7 | All existing integration tests pass | ✅ (88 unit + 14 integration) |
+| 8 | CI green on Linux, macOS, Windows | ⚠️ fmt fixed; clippy green on Windows; release packaging succeeds |
+
+**Post-GA polish:** code signing, macOS notarization, dedicated service smoke tests in CI.
 
 ---
 

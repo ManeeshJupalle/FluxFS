@@ -17,6 +17,7 @@
 9. [Phase 6: Fuzzy Search](#phase-6-fuzzy-search)
 10. [Phase 7: Status Dashboard + Activity Logging](#phase-7-status-dashboard--activity-logging)
 11. [Phase 8: Polish, Testing, README](#phase-8-polish-testing-readme)
+12. [Phase 9: Desktop Application (v0.2)](#phase-9-desktop-application-v02)
 
 ---
 
@@ -24,7 +25,7 @@
 
 ### What FluxFS Does
 
-FluxFS is a background daemon + CLI tool that makes your filesystem self-organizing:
+FluxFS is a background daemon + desktop app + CLI that makes your filesystem self-organizing:
 
 - **Watches directories** in real-time for new/changed files using OS-level APIs
 - **Auto-organizes files** based on user-defined rules (extension, filename pattern, age)
@@ -34,10 +35,22 @@ FluxFS is a background daemon + CLI tool that makes your filesystem self-organiz
 
 ### Core Design Principles
 
-1. **Zero-config useful, full-config powerful.** `flux init` should do something useful out of the box with sensible default rules. Power users customize via TOML.
+1. **Zero-config useful, full-config powerful.** `flux init` or `flux setup` should do something useful out of the box with sensible default rules. Power users customize via the settings GUI or TOML.
 2. **Never lose data.** All destructive operations (duplicate removal, file moves) are logged, reversible (trash, not delete), and optionally dry-run first.
-3. **Minimal resource footprint.** The daemon should idle at <10MB RAM and near-zero CPU. Rust makes this achievable.
-4. **Cross-platform.** Linux and macOS at minimum. Windows is a stretch goal.
+3. **Minimal resource footprint.** The daemon should idle at low RAM and near-zero CPU. Rust makes this achievable.
+4. **Cross-platform.** Linux, macOS, and Windows — CLI, background agent, tray, settings GUI, and installers on all three.
+
+### Product layers (v0.2.0)
+
+| Layer | Binaries / entry | Role |
+|-------|------------------|------|
+| **CLI** | `flux`, `fluxfs` | Power-user commands; same engine as desktop |
+| **Agent** | `flux start --daemon` | Background watcher + index; OS auto-start via `install-service` |
+| **Tray** | `fluxfs-tray` | Status icon, pause/resume, organize, open folders/log, launch settings |
+| **Settings** | `fluxfs-settings`, `flux settings` | egui window for watch paths, rules, dedup, activity |
+| **Packaging** | NSIS / DMG / `.deb` | One-click install; runs `flux setup` post-install |
+
+See [Phase 9: Desktop Application (v0.2)](#phase-9-desktop-application-v02) for service registration, IPC, and release layout.
 
 ---
 
@@ -59,8 +72,11 @@ FluxFS is a background daemon + CLI tool that makes your filesystem self-organiz
 | Glob patterns | `glob` | File pattern matching in rules |
 | Date/time | `chrono` | Timestamps, file age calculations |
 | Platform dirs | `dirs` | Cross-platform home/config/data directories |
-| PID management | `std::fs` + `nix` (Linux/macOS) | Daemon PID file management |
+| PID management | `std::fs` + platform APIs | Daemon PID file, graceful shutdown |
 | Async runtime | `tokio` (minimal features) | Daemon event loop |
+| System tray | `tray-icon` + `winit` | Cross-platform tray icon and menu (v0.2) |
+| Settings GUI | `eframe` + `egui` + `rfd` | Native settings window + folder pickers (v0.2) |
+| OS integration | systemd / LaunchAgent / Run key | Auto-start at login (v0.2) |
 
 ### Why These Choices
 
@@ -76,60 +92,52 @@ FluxFS is a background daemon + CLI tool that makes your filesystem self-organiz
 
 ```
 fluxfs/
-├── Cargo.toml
+├── Cargo.toml                    # Package + four binary targets
 ├── README.md
-├── LICENSE
-├── .gitignore
+├── fluxfs-architecture.md
+├── CHANGELOG.md
 ├── config/
-│   └── default.toml              # Default config with sensible rules
+│   └── default.toml              # Reference defaults (production uses hand-built defaults)
+├── packaging/
+│   ├── github/prepend-download-links.sh
+│   ├── linux/                    # .deb, desktop entry, maintainer scripts
+│   ├── macos/build-dmg.sh
+│   └── windows/                  # NSIS installer + PATH helper scripts
 ├── src/
-│   ├── main.rs                   # Entry point — CLI dispatch
+│   ├── lib.rs                    # Library root — engine + desktop modules
+│   ├── main.rs                   # CLI entry (`flux` / `fluxfs` binaries)
+│   ├── bin/
+│   │   ├── tray.rs               # `fluxfs-tray` — system tray app
+│   │   └── settings.rs           # `fluxfs-settings` — settings GUI entry
 │   ├── cli/
-│   │   ├── mod.rs                # CLI module root
-│   │   └── commands.rs           # Clap command definitions
-│   ├── config/
-│   │   ├── mod.rs                # Config module root
-│   │   ├── parser.rs             # TOML config loading + validation
-│   │   └── types.rs              # Config structs (serde)
-│   ├── scanner/
-│   │   ├── mod.rs                # Scanner module root
-│   │   ├── walker.rs             # Directory traversal with walkdir
-│   │   └── metadata.rs           # File metadata extraction
-│   ├── index/
-│   │   ├── mod.rs                # Index module root
-│   │   ├── store.rs              # In-memory index (HashMap<PathBuf, FileEntry>)
-│   │   ├── persistence.rs        # Serialize/deserialize index to disk
-│   │   └── search.rs             # Fuzzy search over indexed paths
-│   ├── hasher/
-│   │   ├── mod.rs                # Hasher module root
-│   │   └── content.rs            # SHA-256 hashing, parallel with rayon
-│   ├── dedup/
-│   │   ├── mod.rs                # Dedup module root
-│   │   └── detector.rs           # Group files by hash, find duplicates
-│   ├── rules/
-│   │   ├── mod.rs                # Rules module root
-│   │   ├── engine.rs             # Rule matching logic
-│   │   ├── matcher.rs            # Pattern matching (glob, contains, regex)
-│   │   └── actions.rs            # File move/copy/trash operations
-│   ├── watcher/
-│   │   ├── mod.rs                # Watcher module root
-│   │   ├── daemon.rs             # Background process management
-│   │   └── handler.rs            # Event handler (new file → rules → organize)
-│   ├── reporting/
-│   │   ├── mod.rs                # Reporting module root
-│   │   ├── status.rs             # `flux status` output
-│   │   └── activity.rs           # Activity log tracking + `flux log` output
-│   └── errors.rs                 # Error types with thiserror
+│   │   ├── mod.rs
+│   │   ├── commands.rs           # Clap subcommand definitions
+│   │   └── runner.rs             # Command handlers (init, start, setup, settings, …)
+│   ├── config/                   # TOML load/save, validation, rulesets
+│   ├── scanner/                  # walkdir traversal + metadata
+│   ├── index/                    # In-memory index, persistence, fuzzy search
+│   ├── hasher/                   # SHA-256 content hashing (rayon)
+│   ├── dedup/                    # Duplicate detection + strategies
+│   ├── rules/                    # Rule engine, matcher, file moves
+│   ├── watcher/                  # Daemon, debounce, notify handler
+│   ├── reporting/                # status, activity log, formatting
+│   ├── service/                  # systemd, launchd, Windows Run key
+│   ├── ipc/                      # Pause flag (`{data_dir}/paused`)
+│   ├── gui/                      # egui settings app (`app.rs`, `mod.rs`)
+│   ├── paths.rs                  # Path helpers
+│   └── errors.rs
 └── tests/
-    ├── integration/
-    │   ├── test_scanner.rs       # Scanner integration tests
-    │   ├── test_rules.rs         # Rule engine integration tests
-    │   ├── test_dedup.rs         # Dedup integration tests
-    │   ├── test_watcher.rs       # Watcher integration tests
-    │   └── test_search.rs        # Search integration tests
-    └── fixtures/
-        └── test_tree/            # Test directory structure for integration tests
+    └── integration.rs            # End-to-end CLI tests (14 scenarios)
 ```
+
+### Binaries
+
+| Binary | Path | Purpose |
+|--------|------|---------|
+| `flux` | `src/main.rs` | Primary CLI name |
+| `fluxfs` | `src/main.rs` | Alias (same code as `flux`) |
+| `fluxfs-tray` | `src/bin/tray.rs` | System tray (Phase B) |
+| `fluxfs-settings` | `src/bin/settings.rs` | Settings GUI (Phase D) |
 
 ---
 
@@ -859,7 +867,138 @@ GitHub Actions workflow:
 
 ### Completion Criteria
 - Zero `clippy` warnings
-- All tests pass on Linux and macOS
+- All tests pass on Linux, macOS, and Windows
 - README is polished and complete
 - `cargo install --path .` works cleanly
 - Demo GIF recorded and embedded in README
+
+---
+
+## Phase 9: Desktop Application (v0.2)
+
+**Shipped in v0.2.0** — transforms FluxFS from a CLI tool into installable desktop software. See also [docs/ROADMAP-v0.2.md](docs/ROADMAP-v0.2.md) and [docs/INSTALL.md](docs/INSTALL.md).
+
+### Goal
+
+Users install FluxFS once, it starts at login, organizes Downloads in the background, and is controllable from the tray and settings window without a terminal.
+
+### Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                     FluxFS Desktop (v0.2)                   │
+├──────────────┬──────────────────────┬───────────────────────┤
+│  fluxfs-tray │   fluxfs-settings    │   flux / fluxfs (CLI) │
+│  tray-icon   │   eframe + egui      │   clap + runner       │
+└──────┬───────┴──────────┬───────────┴───────────┬───────────┘
+       │                  │                       │
+       └──────────────────┼───────────────────────┘
+                          ▼
+              ┌───────────────────────┐
+              │   fluxfs library      │
+              │   config · index ·    │
+              │   rules · dedup ·     │
+              │   watcher · reporting │
+              └───────────┬───────────┘
+                          ▼
+              ┌───────────────────────┐
+              │   Background agent    │
+              │   flux start --daemon │
+              │   notify + debounce   │
+              └───────────┬───────────┘
+                          ▼
+              ┌───────────────────────┐
+              │   OS auto-start       │
+              │   systemd / launchd / │
+              │   Windows Run key     │
+              └───────────────────────┘
+```
+
+### Phase A — Background agent (`src/service/`, `src/watcher/daemon.rs`)
+
+| Component | Description |
+|-----------|-------------|
+| `flux start` | Spawns detached `flux start --daemon` child (default) |
+| `flux start --daemon` | Service-manager mode; logs to `{data_dir}/flux.log` |
+| `flux start --foreground` | Attached terminal for debugging |
+| `flux stop` | Creates `{data_dir}/flux.stop`; daemon saves index and exits |
+| `flux install-service` | Registers auto-start + spawns tray |
+| `flux uninstall-service` | Removes OS registration; keeps config/index |
+
+**Platform integration:**
+
+| OS | Mechanism | Unit / plist / key |
+|----|-----------|-------------------|
+| Linux | systemd user unit | `~/.config/systemd/user/fluxfs.service` (+ tray unit) |
+| macOS | LaunchAgent | `~/Library/LaunchAgents/com.fluxfs.*.plist` |
+| Windows | HKCU Run key | Starts `flux start --daemon` and `fluxfs-tray` at logon |
+
+Marker file `{data_dir}/service.installed` records registration kind (`systemd`, `launchd`, `windows-run`).
+
+### Phase B — System tray (`src/bin/tray.rs`)
+
+- **Crates:** `tray-icon`, `muda`, `winit`
+- **Icon states:** green (running), yellow (paused), red (daemon stopped)
+- **Menu:** Settings…, Pause/Resume, Run organize now, Open data folder, Open daemon log, Quit tray
+- **Launch:** Bundled with `install-service`; resolves sibling binaries via `service::tray_binary_path()`
+
+### IPC (`src/ipc/mod.rs`)
+
+File-based signals in `{data_dir}/` — no socket server required:
+
+| File | Writer | Reader | Effect |
+|------|--------|--------|--------|
+| `paused` | Tray (`set_paused`) | Watcher (`is_paused`) | Skip organize while present |
+| `flux.stop` | `flux stop` | Daemon loop | Graceful shutdown |
+| `flux.pid` | Daemon | `flux status`, stop | Process tracking |
+| `flux.started` | Daemon | Status, GUI | Uptime display |
+
+### Phase C — Installers (`packaging/`)
+
+| Platform | Artifact | Post-install |
+|----------|----------|--------------|
+| Windows | NSIS `FluxFS-*-setup.exe` | PATH + `flux setup --quiet` |
+| macOS | `.dmg` + `Setup.command` | User runs `flux setup` |
+| Linux | `cargo-deb` `.deb` | postinst runs `flux setup` as user |
+
+**`flux setup`** = `flux init` + `flux install-service` (with `--quiet`, `--skip-init`, `--skip-service` flags for scripts).
+
+CI (`.github/workflows/ci.yml`) builds release artifacts on GitHub Release publish; `packaging/github/prepend-download-links.sh` prepends a download table to release notes.
+
+### Phase D — Settings GUI (`src/gui/`)
+
+- **Binary:** `fluxfs-settings`; **CLI:** `flux settings`
+- **Stack:** `eframe` + `egui` (glow backend), `rfd` for folder pickers
+- **Tabs:** Status, Watch & Rules, Dedup, Activity
+- **Config:** `save_user_config()` in `config/parser.rs` — validate + write TOML
+- **Test rules:** Dry-run `organize_index()` from the GUI
+
+Tray **Settings…** spawns `fluxfs-settings` or falls back to `flux settings`.
+
+### Shared data layout (v0.2)
+
+| Path | Purpose |
+|------|---------|
+| `~/.config/fluxfs/config.toml` (or `%APPDATA%\fluxfs\`) | User config |
+| `{data_dir}/index.bin` | File index |
+| `{data_dir}/activity.jsonl` | Audit log |
+| `{data_dir}/flux.log` | Daemon log (background mode) |
+| `{data_dir}/flux.pid` | Daemon PID |
+| `{data_dir}/flux.started` | Daemon start time |
+| `{data_dir}/flux.stop` | Shutdown request (transient) |
+| `{data_dir}/paused` | Watcher pause flag |
+| `{data_dir}/service.installed` | OS integration marker |
+| `{data_dir}/trash/` | Dedup trash strategy |
+
+Default `{data_dir}`: `~/.local/share/fluxfs` (see `dirs` crate for platform paths).
+
+### Completion criteria (v0.2.0 GA)
+
+- [x] Installers for Windows, macOS, Linux
+- [x] Auto-start at login + background daemon
+- [x] Tray pause/resume and status icon
+- [x] Settings GUI without TOML editing
+- [x] CLI fully functional for power users
+- [x] 88 unit + 14 integration tests
+- [ ] Dedicated service integration tests in CI (manual smoke per OS)
+- [ ] CI green on all three OSes (fmt/clippy; release packaging succeeds)
